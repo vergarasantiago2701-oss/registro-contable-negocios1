@@ -335,6 +335,34 @@
                 padding: 10px 15px;
             }
         }
+		/* ===== MODAL ===== */
+		.modal-backdrop{
+		position: fixed; inset: 0;
+		background: rgba(0,0,0,0.45);
+		display: flex; align-items: center; justify-content: center;
+		padding: 16px; z-index: 9999;
+		}
+		.modal-card{
+		width: 100%; max-width: 520px;
+		background: #fff; border-radius: 10px;
+		box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+		overflow: hidden; border: 1px solid #e5e5e5;
+		}
+		.modal-header{
+		display: flex; align-items: center; justify-content: space-between;
+		padding: 16px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		color: #fff;
+		}
+		.modal-body{ padding: 18px 20px; }
+		.modal-footer{
+		padding: 14px 20px; display: flex; justify-content: flex-end; gap: 10px; background: #fafafa;
+		border-top: 1px solid #eee;
+		}
+		.modal-close{
+		background: transparent; border: none; color: #fff; font-size: 18px; cursor: pointer;
+		}
+		.modal-radio{ display: grid; gap: 10px; margin-top: 10px; }
+		.radio-item{ display: flex; gap: 10px; align-items: center; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -477,7 +505,7 @@
             </div>
             
             <div class="button-group">
-                <button class="btn-primary" onclick="guardarDatos()">Guardar Registro</button>
+                <button class="btn-primary" onclick="abrirModalPago()">Guardar Registro</button>
                 <button class="btn-secondary" onclick="limpiarFormulario()">Limpiar</button>
             </div>
         </div>
@@ -550,12 +578,51 @@
             
             <div class="business-section">
                 <h4>Información del Sistema</h4>
-                <p><strong>Versión:</strong> 1.2</p>
+                <p><strong>Versión:</strong> 1.3</p>
                 <p><strong>Negocios Registrados:</strong> 4</p>
                 <p><strong>Datos Almacenados:</strong> <span id="totalRegistros">0</span> registros</p>
             </div>
         </div>
     </div>
+	<!-- MODAL Confirmación de pago -->
+	<div id="modalPagoBackdrop" class="modal-backdrop" style="display:none;">
+	<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalPagoTitulo">
+		<div class="modal-header">
+		<h3 id="modalPagoTitulo">Confirmar estado de pago</h3>
+		<button class="modal-close" onclick="cerrarModalPago()" aria-label="Cerrar">✖</button>
+		</div>
+
+		<div class="modal-body">
+		<p style="color:#555;margin-bottom:12px;">
+			Indica si el cliente <strong>pagó</strong> o <strong>quedó debiendo</strong> este pedido.
+		</p>
+
+		<div class="modal-radio">
+			<label class="radio-item">
+			<input type="radio" name="estadoPago" value="pagado" checked onclick="toggleNombreCliente(false)">
+			<span>El cliente <strong>pagó todo</strong></span>
+			</label>
+			<label class="radio-item">
+			<input type="radio" name="estadoPago" value="debe" onclick="toggleNombreCliente(true)">
+			<span>El cliente <strong>quedó debiendo</strong></span>
+			</label>
+		</div>
+
+		<div id="nombreClienteWrap" style="display:none; margin-top:12px;">
+			<label for="nombreClienteDeudor" style="font-weight:600;color:#333;margin-bottom:6px;">Nombre del cliente (obligatorio si debe):</label>
+			<input type="text" id="nombreClienteDeudor" placeholder="Ej: Juan Pérez" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;">
+			<small style="color:#666;">Este nombre se guardará con cada línea de venta como cuenta por cobrar.</small>
+		</div>
+
+		<div id="modalPagoError" class="error-message" style="display:none;margin-top:12px;">.</div>
+		</div>
+
+		<div class="modal-footer">
+		<button class="btn-secondary" onclick="cerrarModalPago()">Cancelar</button>
+		<button class="btn-primary" onclick="confirmarGuardarDesdeModal()">Confirmar y guardar</button>
+		</div>
+	</div>
+	</div>
 
     <script>
 	
@@ -789,7 +856,7 @@
 
         // Guardar datos con regla: primero base, luego ventas/gastos
         // Guardar datos: guarda todas las líneas del carrito + un gasto opcional
-		async function guardarDatos() {
+		async function guardarDatos(estadoPago = 'pagado', nombreCliente = null) {
 		  const negocioKey = document.getElementById('business').value;
 		  const negocio = nombresNegocios[negocioKey];
 		  const fecha = document.getElementById('fecha').value;
@@ -807,26 +874,35 @@
 			return;
 		  }
 
+		  // Normalizar texto del estado (para Firestore)
+		  const estadoFmt = (estadoPago === 'debe') ? 'Debe' : 'Pagado';
+		  const clienteFmt = (estadoFmt === 'Debe') ? (nombreCliente || null) : null;
+
 		  try {
-			// Guardar líneas del carrito como documentos separados
+			// Guardar líneas del carrito como documentos separados (VENTAS)
 			for (const item of carrito) {
 			  await addDoc(collection(db, "registros"), {
 				tipo: "movimiento",
 				negocio,
 				fecha,
 				producto: item.producto,
-				tipoCorriente: item.tipoCorriente || null,
+				tipoCorriente: item.tipoCorriente || null, // por si ya lo usas
 				cantidad: item.cantidad,
 				precioUnitario: item.precioUnitario,
 				ventas: item.ventas,
 				gastos: 0,
-				metodo: item.metodo,      // método por línea
+				metodo: item.metodo, // método por línea
+
+				// >>> NUEVO: Estado del pago por línea de venta
+				estadoPago: estadoFmt,               // "Pagado" | "Debe"
+				cliente: clienteFmt,                 // nombre del cliente si "Debe", si no null
+
 				descripcion: `${item.producto} x ${item.cantidad}`,
 				createdAt: new Date()
 			  });
 			}
 
-			// Guardar gasto (si lo hay)
+			// Guardar gasto (si lo hay) — sin estadoPago ni cliente
 			if (gastos > 0) {
 			  await addDoc(collection(db, "registros"), {
 				tipo: "movimiento",
@@ -837,7 +913,9 @@
 				precioUnitario: null,
 				ventas: 0,
 				gastos,
-				metodo: metodoDefault,   // o "Efectivo" si quieres fijarlo
+				metodo: metodoDefault, // o fija "Efectivo" si prefieres
+				estadoPago: null, // NO aplica
+				cliente: null,    // NO aplica
 				descripcion: descripcion || 'Gasto del día',
 				createdAt: new Date()
 			  });
@@ -1232,13 +1310,15 @@
 
         // Generar tabla de registros
         function generarTablaRegistros(registros) {
-		  let html = '<tr><th>Fecha</th><th>Producto</th><th>Cant.</th><th>Precio</th><th>Ventas</th><th>Gastos</th><th>Método</th><th>Descripción</th></tr>';
+		  let html = '<tr><th>Fecha</th><th>Producto</th><th>Cant.</th><th>Precio</th><th>Ventas</th><th>Gastos</th><th>Método</th><th>Estado</th><th>Cliente</th><th>Descripción</th></tr>';
 
 		  registros.forEach(r => {
 			const ventasNum = Number(r.ventas || 0);
 			const gastosNum = Number(r.gastos || 0);
 			const precioFmt = (r.precioUnitario != null) ? COP(r.precioUnitario) : '-';
 			const ventasFmt = (r.tipo === "movimiento") ? COP(ventasNum) : "-";
+			const estadoFmt = r.estadoPago || '-';
+			const clienteFmt = r.cliente || '-';
 			const gastosFmt = (r.tipo === "movimiento") ? '-' + COP(gastosNum) : "-";
 			const metodoFmt = (r.tipo === "movimiento")
 			  ? (r.metodo === 'Efectivo' ? '💵 Efectivo' : '📱 Nequi')
@@ -1253,6 +1333,8 @@
 				<td style="color:#007bff;">${ventasFmt}</td>
 				<td style="color:#dc3545;">${gastosFmt}</td>
 				<td>${metodoFmt}</td>
+				<td>${estadoFmt}</td>
+				<td>${clienteFmt}</td>
 				<td>${r.descripcion || '-'}</td>
 			  </tr>
 			`;
@@ -1291,7 +1373,54 @@
             msg.style.display = 'block';
             setTimeout(() => msg.style.display = 'none', 3000);
         }
+		
+		// ==== MODAL DE CONFIRMACIÓN DE PAGO ====
 
+		function abrirModalPago() {
+		  // Validación mínima antes de abrir el modal:
+		  const gastos = parseFloat(document.getElementById('gastos').value) || 0;
+
+		  if (carrito.length === 0 && gastos === 0) {
+			mostrarError('Agrega al menos una línea al pedido o registra un gasto.');
+			return;
+		  }
+
+		  // Reset de estado del modal
+		  document.querySelector('input[name="estadoPago"][value="pagado"]').checked = true;
+		  toggleNombreCliente(false);
+		  document.getElementById('nombreClienteDeudor').value = '';
+		  document.getElementById('modalPagoError').style.display = 'none';
+
+		  document.getElementById('modalPagoBackdrop').style.display = 'flex';
+		}
+
+		function cerrarModalPago() {
+		  document.getElementById('modalPagoBackdrop').style.display = 'none';
+		}
+
+		function toggleNombreCliente(mostrar) {
+		  const wrap = document.getElementById('nombreClienteWrap');
+		  wrap.style.display = mostrar ? 'block' : 'none';
+		}
+
+		function confirmarGuardarDesdeModal() {
+		  const estado = document.querySelector('input[name="estadoPago"]:checked')?.value || 'pagado';
+		  const nombre = (document.getElementById('nombreClienteDeudor').value || '').trim();
+		  const errorBox = document.getElementById('modalPagoError');
+
+		  if (estado === 'debe' && !nombre) {
+			errorBox.textContent = '✗ Debes ingresar el nombre del cliente que quedó debiendo.';
+			errorBox.style.display = 'block';
+			return;
+		  }
+
+		  errorBox.style.display = 'none';
+		  cerrarModalPago();
+
+		  // Llamamos a guardarDatos con los parámetros seleccionados
+		  guardarDatos(estado, nombre);
+		}
+		
         // Exportar datos
         async function exportarDatos() {
 			const datos = await obtenerTodosLosRegistros();
@@ -1316,14 +1445,15 @@
         // Descargar Excel (actualizado correctamente)
 		async function descargarExcel() {
 		  const datos = await obtenerTodosLosRegistros();
-		  let csv = 'Negocio,Fecha,Producto,Tipo Corriente,Cantidad,Precio Unitario,Ventas,Gastos,Método,Descripción\n';
+		  let csv = 'Negocio,Fecha,Producto,Tipo Corriente,Cantidad,Precio Unitario,Ventas,Gastos,Método,Estado Pago,Cliente,Descripción\n';
 		  for (const [negocio, registros] of Object.entries(datos)) {
 			registros.forEach(r => {
 			  if (r.tipo === "movimiento") {
 				const descripcion = (r.descripcion || '').replace(/"/g, '""');
 				csv += `"${nombresNegocios[negocio]}","${r.fecha}","${r.producto || ''}",` +
 				`"${r.tipoCorriente || ''}",${r.cantidad ?? ''},${r.precioUnitario ?? ''},${r.ventas || 0},${r.gastos || 0},` +
-				`"${r.metodo || ''}","${descripcion}"\n`;
+				`"${r.metodo || ''}","${r.estadoPago || ''}","${(r.cliente || '').replace(/"/g,'""')}","${descripcion}"\n`;
+
 
 			  }
 			});
@@ -1427,7 +1557,7 @@
 	  window.where = where;
 
 	  // 🔐 VALIDAR SESIÓN
-	  onAuthStateChanged(auth, (user) => {
+ 	  onAuthStateChanged(auth, (user) => {
 		  if (user) {
 			console.log("Usuario autenticado:", user.email);
 		  } else {
