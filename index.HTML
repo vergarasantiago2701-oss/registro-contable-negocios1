@@ -1,0 +1,1386 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Contabilidad - Restaurantes</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .tabs {
+            display: flex;
+            background: #f5f5f5;
+            border-bottom: 2px solid #ddd;
+            flex-wrap: wrap;
+        }
+        
+        .tab-button {
+            flex: 1;
+            padding: 15px 20px;
+            background: #f5f5f5;
+            border: none;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+            min-width: 150px;
+        }
+        
+        .tab-button:hover {
+            background: #efefef;
+        }
+        
+        .tab-button.active {
+            background: white;
+            color: #667eea;
+            border-bottom: 3px solid #667eea;
+        }
+        
+        .content {
+            display: none;
+            padding: 30px;
+        }
+        
+        .content.active {
+            display: block;
+        }
+        
+        .business-selector {
+            margin-bottom: 30px;
+        }
+        
+        .business-selector label {
+            font-weight: 600;
+            color: #333;
+            margin-right: 10px;
+            font-size: 1.1em;
+        }
+        
+        .business-selector select {
+            padding: 10px 15px;
+            font-size: 1em;
+            border: 2px solid #667eea;
+            border-radius: 5px;
+            cursor: pointer;
+            background: white;
+            color: #333;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        .form-group.full {
+            grid-template-columns: 1fr;
+        }
+        
+        .input-field {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .input-field label {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 0.95em;
+        }
+        
+        .input-field input,
+        .input-field select {
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 1em;
+            transition: border-color 0.3s ease;
+        }
+        
+        .input-field input:focus,
+        .input-field select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 5px rgba(102, 126, 234, 0.3);
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 25px;
+            justify-content: center;
+        }
+        
+        button {
+            padding: 12px 30px;
+            font-size: 1em;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+            border: 2px solid #ddd;
+        }
+        
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #218838;
+        }
+        
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        
+        .payment-method {
+            display: flex;
+            gap: 20px;
+            margin: 15px 0;
+        }
+        
+        .radio-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .radio-group input[type="radio"] {
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+        }
+        
+        .radio-group label {
+            margin: 0;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        table th {
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+        
+        table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        table tr:hover {
+            background: #f5f5f5;
+        }
+        
+        .summary-card {
+            background: #f9f9f9;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        
+        .summary-card h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .summary-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .summary-box {
+            background: white;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .summary-box h4 {
+            color: #666;
+            margin-bottom: 10px;
+            font-size: 0.9em;
+            text-transform: uppercase;
+        }
+        
+        .summary-box .value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            border: 1px solid #c3e6cb;
+            display: none;
+        }
+        
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            border: 1px solid #f5c6cb;
+            display: none;
+        }
+        
+        .business-section {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #667eea;
+        }
+        
+        .business-section h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        @media (max-width: 768px) {
+            .form-group {
+                grid-template-columns: 1fr;
+            }
+            
+            .summary-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .tab-button {
+                font-size: 0.85em;
+                min-width: 100px;
+                padding: 10px 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header" style="position:relative;">
+			
+			<button onclick="logout()" class="btn-danger" style="
+				position:absolute;
+				top:20px;
+				right:20px;">
+				Cerrar sesión
+			</button>
+
+			<h1>📊 Sistema de Contabilidad</h1>
+			<p>Gestión de Negocios - Base, Ventas y Gastos</p>
+
+		</div>
+        
+        <div class="tabs">
+            <button class="tab-button active" onclick="switchTab('entrada', event)">Entrada de Datos</button>
+			<button class="tab-button" onclick="switchTab('resumen', event)">Resumen Diario</button>
+			<button class="tab-button" onclick="switchTab('acumulado', event)">Cuentas Acumuladas</button>
+			<button class="tab-button" onclick="switchTab('metodos', event)">Análisis Pagos</button>
+			<button class="tab-button" onclick="switchTab('configuracion', event)">Configuración</button>
+        </div>
+        
+        <!-- PESTAÑA 1: ENTRADA DE DATOS -->
+        <div id="entrada" class="content active">
+            <div class="success-message" id="successMsg">✓ Datos guardados correctamente</div>
+            <div class="error-message" id="errorMsg"></div>
+            
+            <div class="business-selector">
+                <label for="business">Selecciona Negocio:</label>
+                <select id="business">
+                    <option value="Negocio1">Negocio Fritos</option>
+                    <option value="Negocio2">Negocio Almuerzos</option>
+                    <option value="Negocio3">Negocio Licorería</option>
+                    <option value="Negocio4">Negocio Comidas Rápidas</option>
+                </select>
+            </div>
+            
+            <h3 style="color: #333; margin-bottom: 10px;">Registrar Movimiento del Día</h3>
+            <p style="color:#666; margin-bottom:20px; font-size:0.9em;">
+			  Registra <strong>ventas por producto</strong> y/o <strong>gastos</strong> para el negocio y fecha.
+			</p>
+            
+            <div class="form-group full">
+                <div class="input-field">
+                    <label for="fecha">Fecha:</label>
+                    <input type="date" id="fecha" value="">
+                </div>
+            </div>
+            
+            <div class="form-group">
+			  <div class="input-field">
+				<div class="form-group">
+				  <div class="input-field">
+					<label>Producto:</label>
+					<select id="productoSelect"></select>
+				  </div>
+
+				  <div class="input-field">
+					<label>Cantidad:</label>
+					<input type="number" id="cantidad" min="1" value="1">
+				  </div>
+				</div>
+
+				<!-- Se muestra solo cuando sea Mojarra en Negocio2 -->
+				<div class="input-field" style="display:none;" id="precioPersonalizadoWrap">
+				  <label>Precio personalizado (solo Mojarra &gt; $25.000):</label>
+				  <input type="number" id="precioPersonalizado" min="25001" step="1" placeholder="Ej: 26000">
+				  <small style="color:#666;">Si el precio es mayor a $25.000, escribe aquí el valor exacto.</small>
+				</div>
+
+				<div class="summary-card">
+				  <strong>Total Venta:</strong>
+				  <span id="totalVentaPreview">$0</span>
+				</div>
+				
+				<!-- Botón para apilar la línea al carrito -->
+				<div class="button-group" style="margin-top:10px;">
+				  <button class="btn-success" type="button" onclick="agregarAlCarrito()">➕ Agregar al pedido</button>
+				</div>
+
+				<!-- Tabla del carrito (pedido actual, no guardado aún) -->
+				<div class="business-section" id="carritoSection" style="display:none;">
+				  <h4>Pedido actual (no guardado)</h4>
+				  <table id="carritoTabla">
+					<thead>
+					  <tr>
+						<th>Producto</th>
+						<th>Cant.</th>
+						<th>Precio Unit.</th>
+						<th>Total</th>
+						<th>Método</th>
+						<th></th>
+					  </tr>
+					</thead>
+					<tbody></tbody>
+				  </table>
+				  <div style="margin-top:10px; text-align:right;">
+					<strong>Total pedido:</strong> <span id="carritoTotal">$0</span>
+				  </div>
+				</div>
+			  </div>
+			</div>
+            
+            <div class="form-group">
+                <div class="input-field">
+                    <label for="gastos">Gastos ($):</label>
+                    <input type="number" id="gastos" placeholder="0" step="0.01" min="0">
+                </div>
+                <div class="input-field">
+                    <label for="descripcion">Descripción de Gasto:</label>
+                    <input type="text" id="descripcion" placeholder="Ej: Compra de ingredientes">
+                </div>
+            </div>
+            
+            <div class="form-group full">
+                <div class="input-field">
+                    <label>Método de Pago (Ventas):</label>
+                    <div class="payment-method">
+                        <div class="radio-group">
+                            <input type="radio" id="efectivo" name="metodo" value="Efectivo" checked>
+                            <label for="efectivo">💵 Efectivo</label>
+                        </div>
+                        <div class="radio-group">
+                            <input type="radio" id="nequi" name="metodo" value="Nequi">
+                            <label for="nequi">📱 Nequi</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="button-group">
+                <button class="btn-primary" onclick="guardarDatos()">Guardar Registro</button>
+                <button class="btn-secondary" onclick="limpiarFormulario()">Limpiar</button>
+            </div>
+        </div>
+        
+        <!-- PESTAÑA 2: RESUMEN DIARIO -->
+        <div id="resumen" class="content">
+            <h3 style="color: #333; margin-bottom: 20px;">Resumen Diario</h3>
+            
+            <div class="input-field" style="margin-bottom: 20px; max-width: 300px;">
+                <label for="fechaFiltro">Filtrar por Fecha:</label>
+                <input type="date" id="fechaFiltro" onchange="actualizarResumen()">
+            </div>
+            
+            <div id="resumenContent"></div>
+        </div>
+        
+        <!-- PESTAÑA 3: CUENTAS ACUMULADAS -->
+        <div id="acumulado" class="content">
+            <h3 style="color: #333; margin-bottom: 20px;">Cuentas Acumuladas por Negocio</h3>
+            
+            <div class="summary-grid" id="acumuladoContent"></div>
+        </div>
+        
+        <!-- PESTAÑA 4: ANÁLISIS PAGOS -->
+        <div id="metodos" class="content">
+            <h3 style="color: #333; margin-bottom: 20px;">Análisis de Métodos de Pago</h3>
+            
+            <div class="form-group">
+                <div class="input-field">
+                    <label for="negocioFiltro">Negocio:</label>
+                    <select id="negocioFiltro" onchange="actualizarAnalisisPagos()">
+                        <option value="Todos">Todos los Negocios</option>
+                        <option value="Negocio1">Negocio Fritos</option>
+                        <option value="Negocio2">Negocio Almuerzos</option>
+                        <option value="Negocio3">Negocio Licorería</option>
+                        <option value="Negocio4">Negocio Comidas Rápidas</option>
+                    </select>
+                </div>
+                <div class="input-field">
+                    <label for="filtroFechaPagos">Filtrar por Fecha:</label>
+                    <select id="filtroFechaPagos" onchange="actualizarAnalisisPagos()">
+                        <option value="actual">Estado Actual (Acumulado)</option>
+                        <option value="fecha">Por Fecha Específica</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div id="fechaPagosContainer" style="display: none; margin-bottom: 20px;">
+                <div class="input-field" style="max-width: 300px;">
+                    <label for="fechaSeleccionadaPagos">Selecciona Fecha:</label>
+                    <input type="date" id="fechaSeleccionadaPagos" onchange="actualizarAnalisisPagos()">
+                </div>
+            </div>
+            
+            <div id="analisisPagosContent"></div>
+        </div>
+        
+        <!-- PESTAÑA 5: CONFIGURACIÓN -->
+        <div id="configuracion" class="content">
+            <h3 style="color: #333; margin-bottom: 20px;">Configuración del Sistema</h3>
+            
+            <div class="business-section">
+                <h4>Gestión de Datos</h4>
+                <div class="button-group">
+                    <button class="btn-secondary" onclick="exportarDatos()">📥 Exportar Datos</button>
+                    <button class="btn-secondary" onclick="descargarExcel()">📊 Descargar Excel</button>
+                    <button class="btn-danger" onclick="limpiarTodos()">🗑️ Limpiar Todo</button>
+                </div>
+            </div>
+            
+            <div class="business-section">
+                <h4>Información del Sistema</h4>
+                <p><strong>Versión:</strong> 1.1</p>
+                <p><strong>Negocios Registrados:</strong> 4</p>
+                <p><strong>Datos Almacenados:</strong> <span id="totalRegistros">0</span> registros</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+	
+		// ==== MAPA DE NOMBRES ====
+		const nombresNegocios = {
+			Negocio1: "Negocio Fritos",
+			Negocio2: "Negocio Almuerzos",
+			Negocio3: "Negocio Licorería",
+			Negocio4: "Negocio Comidas Rápidas"
+		};
+		
+		// 🔵 SALDO INICIAL FIJO POR NEGOCIO
+		const saldoInicial = {
+			Negocio1: { efectivo: 310000, nequi: 0 },
+			Negocio2: { efectivo: 250000, nequi: 0 },
+			Negocio3: { efectivo: 0, nequi: 746000 },
+			Negocio4: { efectivo: 0, nequi: 150000 }
+		};
+		
+		// 🔵 PRODUCTOS POR NEGOCIO
+		const productos = {
+
+		  Negocio1: [ // Fritos
+			{ nombre: "Arepa de huevo", precio: 3000 },
+			{ nombre: "Patacones", precio: 3000 },
+			{ nombre: "Deditos", precio: 1500 },
+			{ nombre: "Papa carne", precio: 2000 },
+			{ nombre: "Papa pollo", precio: 2000 },
+			{ nombre: "Empanada carne", precio: 2000 },
+			{ nombre: "Empanada pollo", precio: 2000 },
+			{ nombre: "Caribañolas", precio: 2000 }
+		  ],
+
+		  Negocio2: [ // Almuerzos
+			{ nombre: "Corriente", precio: 15000 },
+			{ nombre: "Mojarra", precio: 25000 },
+			{ nombre: "Sopa 8k", precio: 8000 },
+			{ nombre: "Sopa 10k", precio: 10000 },
+			{ nombre: "Sopa 13k", precio: 13000 }
+		  ],
+
+		  Negocio3: [ // Licorería
+			{ nombre: "Costeñita x38", precio: 85000 },
+			{ nombre: "Costeñita pequeña", precio: 3000 },
+			{ nombre: "Costeña", precio: 4000 },
+			{ nombre: "Águila negra pequeña", precio: 4000 },
+			{ nombre: "Águila negra grande", precio: 7000 },
+			{ nombre: "Gaseosa personal", precio: 2000 }
+		  ],
+
+		  Negocio4: [] // Comidas rápidas (por ahora manual)
+		};
+		
+		// === Formateador COP (sin decimales) ===
+		const COP = (n) => new Intl.NumberFormat('es-CO', {
+		  style: 'currency',
+		  currency: 'COP',
+		  minimumFractionDigits: 0,
+		  maximumFractionDigits: 0
+		}).format(Number(n) || 0);
+
+		// ====== CARGAR PRODUCTOS AUTOMÁTICAMENTE ======
+		function cargarProductos() {
+		  const negocio = document.getElementById("business").value;
+		  const select = document.getElementById("productoSelect");
+		  const precioWrap = document.getElementById("precioPersonalizadoWrap");
+		  const precioInput = document.getElementById("precioPersonalizado");
+
+		  select.innerHTML = "";
+
+		  // Negocio sin catálogo -> Venta Manual
+		  if (!productos[negocio] || productos[negocio].length === 0) {
+			const opt = document.createElement("option");
+			opt.value = "manual";
+			opt.textContent = "Venta Manual";
+			select.appendChild(opt);
+			document.getElementById("totalVentaPreview").textContent = "$0";
+			// Ocultar input personalizado
+			precioWrap.style.display = "none";
+			precioInput.value = "";
+			return;
+		  }
+
+		  // Llenar catálogo
+		  productos[negocio].forEach((p, index) => {
+			const option = document.createElement("option");
+			option.value = index;
+			option.textContent = `${p.nombre} - $${p.precio}`;
+			select.appendChild(option);
+		  });
+
+		  // Mostrar/ocultar input si es Mojarra (Negocio2)
+		  const idx = parseInt(select.value, 10);
+		  const prod = productos[negocio][idx];
+		  if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("mojarra")) {
+			precioWrap.style.display = "block";
+		  } else {
+			precioWrap.style.display = "none";
+			precioInput.value = "";
+		  }
+
+		  calcularTotalVenta();
+		}
+
+		// ====== CALCULAR TOTAL (incluye precio personalizado para Mojarra) ======
+		function calcularTotalVenta() {
+		  const negocio = document.getElementById("business").value;
+		  const select = document.getElementById("productoSelect");
+		  const index = select.value;
+		  const cantidad = parseInt(document.getElementById("cantidad").value, 10) || 0;
+
+		  const precioWrap = document.getElementById("precioPersonalizadoWrap");
+		  const precioInput = document.getElementById("precioPersonalizado");
+
+		  if (index === 'manual' || !productos[negocio] || !productos[negocio][index]) {
+			document.getElementById("totalVentaPreview").textContent = "$0";
+			return;
+		  }
+
+		  const prod = productos[negocio][index];
+		  let precioUnitario = prod.precio || 0;
+
+		  // Si es Mojarra (Negocio2) permitir precio > 25.000
+		  if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("mojarra")) {
+			precioWrap.style.display = "block";
+			const personalizado = parseInt(precioInput.value, 10);
+			if (!isNaN(personalizado) && personalizado > 25000) {
+			  precioUnitario = personalizado;
+			}
+		  } else {
+			precioWrap.style.display = "none";
+			precioInput.value = "";
+		  }
+
+		  const total = precioUnitario * (cantidad || 1);
+		  document.getElementById("totalVentaPreview").textContent = COP(total);
+		}
+
+        // Inicializar localStorage
+        function inicializarSistema() {
+            if (!localStorage.getItem('contabilidad')) {
+                const datosInicial = {
+                    Negocio1: [],
+                    Negocio2: [],
+                    Negocio3: [],
+                    Negocio4: []
+                };
+                localStorage.setItem('contabilidad', JSON.stringify(datosInicial));
+            }
+            setFechaActual();
+            actualizarTotalRegistros();
+            actualizarEstadoBase();
+			cargarProductos();
+        }
+		async function obtenerTodosLosRegistros() {
+			const snapshot = await getDocs(collection(db, "registros"));
+			
+			const datos = {
+				Negocio1: [],
+				Negocio2: [],
+				Negocio3: [],
+				Negocio4: []
+			};
+
+			snapshot.forEach(doc => {
+				const data = doc.data();
+
+				// Buscar qué key corresponde al nombre real
+				const negocioKey = Object.keys(nombresNegocios)
+					.find(key => nombresNegocios[key] === data.negocio);
+
+				if (negocioKey) {
+					datos[negocioKey].push(data);
+				}
+			});
+
+			return datos;
+		}
+
+        // Establecer fecha actual
+        function setFechaActual() {
+            const hoy = new Date().toISOString().split('T')[0];
+            document.getElementById('fecha').value = hoy;
+            document.getElementById('fechaFiltro').value = hoy;
+        }
+
+        // Actualizar estado del campo base (ingresos)
+        async function actualizarEstadoBase() {
+			const negocio = document.getElementById('business').value;
+			const fecha = document.getElementById('fecha').value;
+			const datos = await obtenerTodosLosRegistros();
+			const registrosNegocio = datos[negocio] || [];
+
+			const yaTieneBase = registrosNegocio.some(r => 
+				r.fecha === fecha && r.tipo === "base"
+			);
+			
+		}
+
+        // Guardar datos con regla: primero base, luego ventas/gastos
+        // Guardar datos: guarda todas las líneas del carrito + un gasto opcional
+		async function guardarDatos() {
+		  const negocioKey = document.getElementById('business').value;
+		  const negocio = nombresNegocios[negocioKey];
+		  const fecha = document.getElementById('fecha').value;
+		  const gastos = parseFloat(document.getElementById('gastos').value) || 0;
+		  let descripcion = document.getElementById('descripcion').value || ''; // para el gasto
+		  const metodoDefault = document.querySelector('input[name="metodo"]:checked').value;
+
+		  if (!fecha) {
+			mostrarError('Debes seleccionar la fecha');
+			return;
+		  }
+
+		  if (carrito.length === 0 && gastos === 0) {
+			mostrarError('Agrega al menos una línea al pedido o registra un gasto.');
+			return;
+		  }
+
+		  try {
+			// Guardar líneas del carrito como documentos separados
+			for (const item of carrito) {
+			  await addDoc(collection(db, "registros"), {
+				tipo: "movimiento",
+				negocio,
+				fecha,
+				producto: item.producto,
+				cantidad: item.cantidad,
+				precioUnitario: item.precioUnitario,
+				ventas: item.ventas,
+				gastos: 0,
+				metodo: item.metodo,      // método por línea
+				descripcion: `${item.producto} x ${item.cantidad}`,
+				createdAt: new Date()
+			  });
+			}
+
+			// Guardar gasto (si lo hay)
+			if (gastos > 0) {
+			  await addDoc(collection(db, "registros"), {
+				tipo: "movimiento",
+				negocio,
+				fecha,
+				producto: null,
+				cantidad: null,
+				precioUnitario: null,
+				ventas: 0,
+				gastos,
+				metodo: metodoDefault,   // o "Efectivo" si quieres fijarlo
+				descripcion: descripcion || 'Gasto del día',
+				createdAt: new Date()
+			  });
+			}
+
+			// Limpieza y feedback
+			carrito = [];
+			renderCarrito();
+			document.getElementById('gastos').value = '';
+			document.getElementById('descripcion').value = '';
+			mostrarExito();
+		  } catch (error) {
+			console.error(error);
+			mostrarError("Error guardando en la nube");
+		  }
+		}
+		
+		// ====== CARRITO (pedido en pantalla) ======
+		let carrito = []; // {producto, cantidad, precioUnitario, ventas, metodo}
+
+		// Render del carrito
+		function renderCarrito() {
+		  const tbody = document.querySelector('#carritoTabla tbody');
+		  const section = document.getElementById('carritoSection');
+		  const totalEl = document.getElementById('carritoTotal');
+
+		  if (!tbody || !section || !totalEl) return;
+
+		  tbody.innerHTML = '';
+
+		  let totalPedido = 0;
+
+		  carrito.forEach((item, idx) => {
+			const tr = document.createElement('tr');
+			const totalLinea = item.ventas || 0;
+			totalPedido += totalLinea;
+
+			tr.innerHTML = `
+			  <td>${item.producto}</td>
+			  <td>${item.cantidad}</td>
+			  <td>$${Number(item.precioUnitario)}</td>
+			  <td>$${Number(totalLinea)}</td>
+			  <td>${item.metodo === 'Efectivo' ? '💵 Efectivo' : '📱 Nequi'}</td>
+			  <td><button class="btn-danger" type="button" onclick="quitarLinea(${idx})">✖</button></td>
+			`;
+			tbody.appendChild(tr);
+		  });
+
+		  totalEl.textContent = '$' + Number(totalPedido);
+		  section.style.display = carrito.length > 0 ? 'block' : 'none';
+		}
+
+		// Quitar línea del carrito
+		function quitarLinea(idx) {
+		  carrito.splice(idx, 1);
+		  renderCarrito();
+		}
+
+		// Agregar línea al carrito
+		function agregarAlCarrito() {
+		  const negocio = document.getElementById('business').value;
+		  const index = document.getElementById("productoSelect").value;
+		  const cantidad = parseInt(document.getElementById("cantidad").value, 10) || 0;
+		  const metodo = document.querySelector('input[name="metodo"]:checked').value;
+
+		  if (!productos[negocio] || index === 'manual' || !productos[negocio][index]) {
+			mostrarError('Selecciona un producto del catálogo para agregar al pedido.');
+			return;
+		  }
+		  if (cantidad <= 0) {
+			mostrarError('La cantidad debe ser mayor a 0');
+			return;
+		  }
+
+		  const prod = productos[negocio][index];
+		  let precioUnitario = prod.precio || 0;
+
+		  // Mojarra con precio personalizado
+		  if (negocio === "Negocio2" && prod.nombre.toLowerCase().includes("mojarra")) {
+			const personalizado = parseInt(document.getElementById("precioPersonalizado").value, 10);
+			if (!isNaN(personalizado) && personalizado > 25000) {
+			  precioUnitario = personalizado;
+			}
+		  }
+
+		  const ventas = precioUnitario * cantidad;
+
+		  carrito.push({
+			producto: prod.nombre,
+			cantidad,
+			precioUnitario,
+			ventas,
+			metodo
+		  });
+
+		  // Reset mínimos del bloque de venta
+		  document.getElementById('cantidad').value = '1';
+		  const p = document.getElementById('precioPersonalizado');
+		  if (p) p.value = '';
+
+		  calcularTotalVenta();
+		  renderCarrito();
+		}
+
+		// Vaciar carrito si cambia fecha/negocio (para no mezclar cortes)
+		function resetCarritoSiCambiaCorte() {
+		  carrito = [];
+		  renderCarrito();
+		}
+
+		// Hookear cambios de fecha y negocio
+		document.getElementById('business').addEventListener('change', resetCarritoSiCambiaCorte);
+		document.getElementById('fecha').addEventListener('change', resetCarritoSiCambiaCorte);
+
+        // Agrupa líneas del día por producto para mostrar conteo y total
+		function agruparPlatosPorProducto(registrosDelDia) {
+		  const mapa = new Map(); // clave: producto, valor: {cantidadTotal, totalVentas}
+		  registrosDelDia.forEach(r => {
+			if (r.tipo === 'movimiento' && r.producto && r.cantidad && r.ventas) {
+			  const key = r.producto;
+			  const prev = mapa.get(key) || { cantidadTotal: 0, totalVentas: 0 };
+			  prev.cantidadTotal += Number(r.cantidad) || 0;
+			  prev.totalVentas += Number(r.ventas) || 0;
+			  mapa.set(key, prev);
+			}
+		  });
+		  // A HTML
+		  if (mapa.size === 0) return '';
+		  let rows = '';
+		  mapa.forEach((val, prod) => {
+			rows += `
+			  <tr>
+				<td>${prod}</td>
+				<td style="text-align:center;">${val.cantidadTotal}</td>
+				<td style="text-align:right;">${COP(val.totalVentas)}</td>
+			  </tr>
+			`;
+		  });
+		  return `
+			<div style="margin-top:10px;">
+			  <h4>Platos vendidos</h4>
+			  <table>
+				<thead>
+				  <tr>
+					<th>Producto</th>
+					<th>Cant.</th>
+					<th>Total (COP)</th>
+				  </tr>
+				</thead>
+				<tbody>
+				  ${rows}
+				</tbody>
+			  </table>
+			</div>
+		  `;
+		}
+		
+		// Actualizar resumen diario
+        async function actualizarResumen(){
+		  const fecha = document.getElementById('fechaFiltro').value;
+		  const datos = await obtenerTodosLosRegistros();
+		  const container = document.getElementById('resumenContent');
+		  let html = '';
+
+		  for (const [negocio, registros] of Object.entries(datos)) {
+			const delDia = registros.filter(r => r.fecha === fecha);
+
+			let ventasEfectivo = 0;
+			let ventasNequi = 0;
+			let totalGastos = 0;
+
+			delDia.forEach(r => {
+			  if (r.tipo === "movimiento") {
+				if (r.metodo === "Efectivo") {
+				  ventasEfectivo += r.ventas || 0;
+				  totalGastos += r.gastos || 0;
+				}
+				if (r.metodo === "Nequi") {
+				  ventasNequi += r.ventas || 0;
+				}
+			  }
+			});
+
+			const totalVentas = ventasEfectivo + ventasNequi;
+			const balance = totalVentas - totalGastos;
+			const saldoEfectivo = ventasEfectivo - totalGastos;
+			const saldoNequi = ventasNequi;
+
+			html += `
+			  <div class="business-section">
+				<h4>${nombresNegocios[negocio]}</h4>
+				<div class="summary-grid">
+				  <div class="summary-box">
+					<h4>Ventas</h4>
+					<div class="value" style="color:#007bff;">$${totalVentas}</div>
+				  </div>
+				  <div class="summary-box">
+					<h4>Gastos</h4>
+					<div class="value" style="color:#dc3545;">-$${totalGastos}</div>
+				  </div>
+				  <div class="summary-box" style="border-color:#667eea;background:#f0f4ff;">
+					<h4>Balance del Día</h4>
+					<div class="value" style="color:#667eea;">$${balance}</div>
+				  </div>
+				</div>
+				<hr style="margin:15px 0;">
+				<div style="display:flex;justify-content:space-between;">
+				  <div>💵 <strong>Saldo en Efectivo:</strong><br>
+					<span style="color:#28a745;font-weight:bold;">$${saldoEfectivo}</span>
+				  </div>
+				  <div>📱 <strong>Saldo en Nequi:</strong><br>
+					<span style="color:#007bff;font-weight:bold;">$${saldoNequi}</span>
+				  </div>
+				</div>
+				${delDia.length > 0 ? `<table>${generarTablaRegistros(delDia)}</table>` : '<p style="color:#999;margin-top:15px;">No hay registros para esta fecha</p>'}
+				${agruparPlatosPorProducto(delDia)}
+			  </div>
+			`;
+		  }
+
+		  container.innerHTML = html || '<p>No hay datos</p>';
+		}
+
+        // Actualizar cuentas acumuladas
+        async function actualizarAcumulado() {
+
+			const datos = await obtenerTodosLosRegistros();
+			const container = document.getElementById('acumuladoContent');
+			let html = '';
+
+			for (const [negocio, registros] of Object.entries(datos)) {
+
+				let saldoEfectivo = saldoInicial[negocio].efectivo;
+				let saldoNequi = saldoInicial[negocio].nequi;
+
+				let totalVentas = 0;
+				let totalGastos = 0;
+
+				registros.forEach(r => {
+
+					if (r.tipo === "movimiento") {
+
+						totalVentas += r.ventas || 0;
+						totalGastos += r.gastos || 0;
+
+						if (r.metodo === "Efectivo") {
+							saldoEfectivo += (r.ventas || 0) - (r.gastos || 0);
+						}
+
+						if (r.metodo === "Nequi") {
+							saldoNequi += (r.ventas || 0);
+						}
+					}
+				});
+
+				const saldoTotal = saldoEfectivo + saldoNequi;
+
+				html += `
+					<div class="summary-box">
+						<h4>${nombresNegocios[negocio]}</h4>
+						<p><strong>Capital Inicial:</strong> ${COP(saldoInicial[negocio].efectivo + saldoInicial[negocio].nequi)}</p>
+						<p><strong>Ventas Totales:</strong> ${COP(totalVentas)}</p>
+						<p><strong>Gastos Totales:</strong> -${COP(totalGastos)}</p>
+						<hr>
+						<p><strong>Saldo Total Real:</strong> ${COP(saldoTotal)}</p>
+						<hr>
+						<p>💵 Saldo Efectivo: ${COP(saldoEfectivo)}</p>
+						<p>📱 Saldo Nequi: ${COP(saldoNequi)}</p>
+
+					</div>
+				`;
+			}
+
+			container.innerHTML = html;
+		}
+
+        // Análisis de métodos de pago con filtro de fecha
+        async function actualizarAnalisisPagos() {
+            const negocioFiltro = document.getElementById('negocioFiltro').value;
+            const filtroFecha = document.getElementById('filtroFechaPagos').value;
+            const datos = await obtenerTodosLosRegistros();
+            const container = document.getElementById('analisisPagosContent');
+            const fechaPagosContainer = document.getElementById('fechaPagosContainer');
+            
+            // Mostrar/ocultar selector de fecha
+            if (filtroFecha === 'fecha') {
+                fechaPagosContainer.style.display = 'block';
+                if (!document.getElementById('fechaSeleccionadaPagos').value) {
+                    document.getElementById('fechaSeleccionadaPagos').value = new Date().toISOString().split('T')[0];
+                }
+            } else {
+                fechaPagosContainer.style.display = 'none';
+            }
+
+            const fechaSeleccionada = document.getElementById('fechaSeleccionadaPagos').value;
+            let html = '';
+
+            const negocios = negocioFiltro === 'Todos' ? Object.keys(datos) : [negocioFiltro];
+
+            // Totales globales
+            let totalGlobalEfectivo = 0;
+            let totalGlobalNequi = 0;
+            let totalGlobalVentas = 0;
+
+            // Calcular por negocio
+            for (const negocio of negocios) {
+                let registros = datos[negocio];
+                
+                // Filtrar por fecha si es necesario
+                if (filtroFecha === 'fecha') {
+                    registros = registros.filter(r => r.fecha === fechaSeleccionada);
+                }
+
+                const efectivo = registros.filter(r => r.metodo === 'Efectivo').reduce((sum, r) => sum + r.ventas, 0);
+                const nequi = registros.filter(r => r.metodo === 'Nequi').reduce((sum, r) => sum + r.ventas, 0);
+                const totalVentas = efectivo + nequi;
+                const pctEfectivo = totalVentas > 0 ? ((efectivo / totalVentas) * 100) : 0;
+                const pctNequi = totalVentas > 0 ? ((nequi / totalVentas) * 100) : 0;
+
+                // Sumar a totales globales
+                totalGlobalEfectivo += efectivo;
+                totalGlobalNequi += nequi;
+                totalGlobalVentas += totalVentas;
+
+                html += `
+                    <div class="business-section">
+                        <h4>${nombresNegocios[negocio]}</h4>
+                        <div class="summary-grid">
+                            <div class="summary-box">
+                                <h4>💵 Efectivo</h4>
+                                <div class="value">${COP(efectivo)}</div>
+                                <p style="color: #666; margin-top: 10px;">${pctEfectivo}%</p>
+                            </div>
+                            <div class="summary-box">
+                                <h4>📱 Nequi</h4>
+                                <div class="value">${COP(nequi)}</div>
+                                <p style="color: #666; margin-top: 10px;">${pctNequi}%</p>
+                            </div>
+                            <div class="summary-box">
+                                <h4>Total Ventas</h4>
+                                <div class="value">${COP(totalVentas)}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Agregar totales globales al inicio
+            const pctGlobalEfectivo = totalGlobalVentas > 0 ? ((totalGlobalEfectivo / totalGlobalVentas) * 100) : 0;
+            const pctGlobalNequi = totalGlobalVentas > 0 ? ((totalGlobalNequi / totalGlobalVentas) * 100) : 0;
+
+            const resumenTitulo = filtroFecha === 'fecha' ? `RESUMEN DEL DÍA (${fechaSeleccionada})` : 'RESUMEN TOTAL (Acumulado)';
+
+            let htmlFinal = `
+                <div class="business-section" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none;">
+                    <h4 style="color: white; text-align: center; margin-bottom: 20px; font-size: 1.1em;">${resumenTitulo}</h4>
+                    <div class="summary-grid">
+                        <div class="summary-box" style="background: rgba(255,255,255,0.95); border: none;">
+                            <h4 style="color: #28a745;">💵 Total Efectivo</h4>
+                            <div class="value" style="color: #28a745;">$${totalGlobalEfectivo}</div>
+                            <p style="color: #666; margin-top: 10px; font-weight: bold;">${pctGlobalEfectivo}%</p>
+                        </div>
+                        <div class="summary-box" style="background: rgba(255,255,255,0.95); border: none;">
+                            <h4 style="color: #007bff;">📱 Total Nequi</h4>
+                            <div class="value" style="color: #007bff;">$${totalGlobalNequi}</div>
+                            <p style="color: #666; margin-top: 10px; font-weight: bold;">${pctGlobalNequi}%</p>
+                        </div>
+                        <div class="summary-box" style="background: rgba(255,255,255,0.95); border: none;">
+                            <h4 style="color: #667eea;">💰 Total General</h4>
+                            <div class="value" style="color: #667eea;">$${totalGlobalVentas}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            htmlFinal += html;
+            container.innerHTML = htmlFinal || '<p>No hay datos de pagos</p>';
+        }
+
+        // Generar tabla de registros
+        function generarTablaRegistros(registros) {
+		  let html = '<tr><th>Fecha</th><th>Producto</th><th>Cant.</th><th>Precio</th><th>Ventas</th><th>Gastos</th><th>Método</th><th>Descripción</th></tr>';
+
+		  registros.forEach(r => {
+			const ventas = r.tipo === "movimiento" ? (r.ventas || 0) : "-";
+			const gastos = r.tipo === "movimiento" ? (r.gastos || 0) : "-";
+			const metodo = r.tipo === "movimiento" ? (r.metodo === 'Efectivo' ? '💵 Efectivo' : '📱 Nequi') : "-";
+			html += `
+			  <tr>
+				<td>${r.fecha}</td>
+				<td>${r.producto || '-'}</td>
+				<td>${r.cantidad ?? '-'}</td>
+				<td>${r.precioUnitario ? '$' + Number(r.precioUnitario).toLocaleString('es-CO') : '-'}</td>
+				<td style="color:#007bff;">$${ventas}</td>
+				<td style="color:#dc3545;">-$${gastos}</td>
+				<td>${metodo}</td>
+				<td>${r.descripcion || '-'}</td>
+			  </tr>
+			`;
+		  });
+
+		  return html;
+		}
+
+        // Limpiar formulario
+        function limpiarFormulario() {
+		  document.getElementById('gastos').value = '';
+		  document.getElementById('descripcion').value = '';
+		  document.getElementById('cantidad').value = '1';
+		  document.getElementById('efectivo').checked = true;
+		  document.getElementById('totalVentaPreview').textContent = '$0';
+		  const precioInput = document.getElementById("precioPersonalizado");
+		  if (precioInput) precioInput.value = '';
+		  setFechaActual();
+		  actualizarEstadoBase();
+		  cargarProductos(); // recarga selector de productos
+		}
+
+        // Mostrar mensajes
+        function mostrarExito() {
+            const msg = document.getElementById('successMsg');
+            msg.style.display = 'block';
+            setTimeout(() => msg.style.display = 'none', 3000);
+        }
+
+        function mostrarError(texto) {
+            const msg = document.getElementById('errorMsg');
+            msg.textContent = '✗ ' + texto;
+            msg.style.display = 'block';
+            setTimeout(() => msg.style.display = 'none', 3000);
+        }
+
+        // Exportar datos
+        async function exportarDatos() {
+			const datos = await obtenerTodosLosRegistros();
+			
+			// Crear nuevo objeto con nombres reales
+			const datosFormateados = {};
+
+			for (const [negocio, registros] of Object.entries(datos)) {
+				const nombreReal = nombresNegocios[negocio] || negocio;
+				datosFormateados[nombreReal] = registros;
+			}
+
+			const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(datosFormateados, null, 2));
+			
+			const link = document.createElement('a');
+			link.href = dataStr;
+			link.download = 'contabilidad_' + new Date().toISOString().split('T')[0] + '.json';
+			link.click();
+		}
+
+
+        // Descargar Excel (actualizado correctamente)
+		async function descargarExcel() {
+		  const datos = await obtenerTodosLosRegistros();
+		  let csv = 'Negocio,Fecha,Producto,Cantidad,Precio Unitario,Ventas,Gastos,Método,Descripción\n';
+		  for (const [negocio, registros] of Object.entries(datos)) {
+			registros.forEach(r => {
+			  if (r.tipo === "movimiento") {
+				const descripcion = (r.descripcion || '').replace(/"/g, '""');
+				csv += `"${nombresNegocios[negocio]}","${r.fecha}","${r.producto || ''}",` +
+					   `${r.cantidad ?? ''},${r.precioUnitario ?? ''},${r.ventas || 0},${r.gastos || 0},` +
+					   `"${r.metodo || ''}","${descripcion}"\n`;
+			  }
+			});
+		  }
+		  const link = document.createElement('a');
+		  link.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+		  link.download = 'contabilidad_' + new Date().toISOString().split('T')[0] + '.csv';
+		  link.click();
+		}
+
+        // Limpiar todo
+        function limpiarTodos() {
+            if (confirm('¿Estás seguro de que deseas limpiar TODOS los datos? Esta acción no se puede deshacer.')) {
+                localStorage.removeItem('contabilidad');
+                inicializarSistema();
+                actualizarTotalRegistros();
+                mostrarExito();
+            }
+        }
+
+        // Actualizar total de registros
+        async function actualizarTotalRegistros() {
+            const datos = await obtenerTodosLosRegistros();
+            let total = 0;
+            for (const registros of Object.values(datos)) {
+                total += registros.length;
+            }
+            document.getElementById('totalRegistros').textContent = total;
+        }
+
+        // Eventos para actualizar estado de base
+        document.getElementById('business').addEventListener('change', actualizarEstadoBase);
+        document.getElementById('fecha').addEventListener('change', actualizarEstadoBase);
+		// Productos y cálculo
+		document.getElementById("business").addEventListener("change", cargarProductos);
+		document.getElementById("productoSelect").addEventListener("change", calcularTotalVenta);
+		document.getElementById("cantidad").addEventListener("input", calcularTotalVenta);
+		document.getElementById("precioPersonalizado").addEventListener("input", calcularTotalVenta);
+
+        // Inicializar al cargar
+        window.addEventListener('DOMContentLoaded', inicializarSistema);
+		
+		async function switchTab(tabName, ev) {
+		  const contents = document.querySelectorAll('.content');
+		  const buttons = document.querySelectorAll('.tab-button');
+		  
+		  // Desactivar todo
+		  contents.forEach(c => c.classList.remove('active'));
+		  buttons.forEach(b => b.classList.remove('active'));
+		  
+		  // Activar contenido
+		  document.getElementById(tabName).classList.add('active');
+		  // Activar el botón que disparó el evento (si existe)
+		  if (ev && ev.target) ev.target.classList.add('active');
+
+		  // Cargar datos al entrar a cada pestaña
+		  if (tabName === 'resumen') await actualizarResumen();
+		  if (tabName === 'acumulado') await actualizarAcumulado();
+		  if (tabName === 'metodos') await actualizarAnalisisPagos();
+		}
+    </script>
+	<script type="module">
+	  import { initializeApp } 
+	  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+
+	  import { 
+		getAuth, 
+		onAuthStateChanged, 
+		signOut 
+	  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+	  import { 
+		getFirestore, 
+		collection, 
+		addDoc, 
+		getDocs, 
+		query, 
+		where 
+	  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+	  const firebaseConfig = {
+		apiKey: "AIzaSyA_C9CYbLYpkJhaME5j9OgzlVjN83iwY78",
+		authDomain: "cuentaselancla.firebaseapp.com",
+		projectId: "cuentaselancla",
+		storageBucket: "cuentaselancla.firebasestorage.app",
+		messagingSenderId: "538778905068",
+		appId: "1:538778905068:web:4e48f2ef1510d68d6138c9"
+	  };
+
+	  // 🔥 INICIALIZAR UNA SOLA VEZ
+	  const app = initializeApp(firebaseConfig);
+	  const auth = getAuth(app);
+	  const db = getFirestore(app);
+
+	  // 🔥 HACER VARIABLES GLOBALES
+	  window.db = db;
+	  window.collection = collection;
+	  window.addDoc = addDoc;
+	  window.getDocs = getDocs;
+	  window.query = query;
+	  window.where = where;
+
+	  // 🔐 VALIDAR SESIÓN
+	  onAuthStateChanged(auth, (user) => {
+		  if (user) {
+			console.log("Usuario autenticado:", user.email);
+		  } else {
+			console.log("No hay sesión activa");
+			setTimeout(() => {
+			  window.location.href = "login.html";
+			}, 500);
+		  }
+		});
+
+	  // 🚪 CERRAR SESIÓN
+	  window.logout = function() {
+		signOut(auth).then(() => {
+		  window.location.href = "login.html";
+		});
+	  };
+	</script>
+</body>
+</html>
