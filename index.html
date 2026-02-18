@@ -1205,109 +1205,149 @@
 			container.innerHTML = html;
 		}
 
-        // Análisis de métodos de pago con filtro de fecha
-        async function actualizarAnalisisPagos() {
-            const negocioFiltro = document.getElementById('negocioFiltro').value;
-            const filtroFecha = document.getElementById('filtroFechaPagos').value;
-            const datos = await obtenerTodosLosRegistros();
-            const container = document.getElementById('analisisPagosContent');
-            const fechaPagosContainer = document.getElementById('fechaPagosContainer');
-            
-            // Mostrar/ocultar selector de fecha
-            if (filtroFecha === 'fecha') {
-                fechaPagosContainer.style.display = 'block';
-                if (!document.getElementById('fechaSeleccionadaPagos').value) {
-                    document.getElementById('fechaSeleccionadaPagos').value = new Date().toISOString().split('T')[0];
-                }
-            } else {
-                fechaPagosContainer.style.display = 'none';
-            }
+		// === Reemplazar COMPLETO ===
+		async function actualizarAnalisisPagos() {
+			const negocioFiltro = document.getElementById('negocioFiltro').value;
+			const filtroFecha = document.getElementById('filtroFechaPagos').value;
+			const datos = await obtenerTodosLosRegistros();
+			const container = document.getElementById('analisisPagosContent');
+			const fechaPagosContainer = document.getElementById('fechaPagosContainer');
 
-            const fechaSeleccionada = document.getElementById('fechaSeleccionadaPagos').value;
-            let html = '';
+			// Mostrar/ocultar selector de fecha
+			if (filtroFecha === 'fecha') {
+			fechaPagosContainer.style.display = 'block';
+			if (!document.getElementById('fechaSeleccionadaPagos').value) {
+				document.getElementById('fechaSeleccionadaPagos').value = new Date().toISOString().split('T')[0];
+			}
+			} else {
+			fechaPagosContainer.style.display = 'none';
+			}
 
-            const negocios = negocioFiltro === 'Todos' ? Object.keys(datos) : [negocioFiltro];
+			const fechaSeleccionada = document.getElementById('fechaSeleccionadaPagos').value;
+			let html = '';
 
-            // Totales globales
-            let totalGlobalEfectivo = 0;
-            let totalGlobalNequi = 0;
-            let totalGlobalVentas = 0;
+			const negocios = (negocioFiltro === 'Todos') ? Object.keys(datos) : [negocioFiltro];
 
-            // Calcular por negocio
-            for (const negocio of negocios) {
-                let registros = datos[negocio];
-                
-                // Filtrar por fecha si es necesario
-                if (filtroFecha === 'fecha') {
-                    registros = registros.filter(r => r.fecha === fechaSeleccionada);
-                }
+			// Totales globales (saldos reales)
+			let totalGlobalEfectivo = 0;
+			let totalGlobalNequi = 0;
 
-                const efectivo = registros.filter(r => r.metodo === 'Efectivo').reduce((sum, r) => sum + r.ventas, 0);
-                const nequi = registros.filter(r => r.metodo === 'Nequi').reduce((sum, r) => sum + r.ventas, 0);
-                const totalVentas = efectivo + nequi;
-                const pctEfectivo = totalVentas > 0 ? ((efectivo / totalVentas) * 100) : 0;
-                const pctNequi = totalVentas > 0 ? ((nequi / totalVentas) * 100) : 0;
+			for (const negocio of negocios) {
+			let registros = datos[negocio] || [];
 
-                // Sumar a totales globales
-                totalGlobalEfectivo += efectivo;
-                totalGlobalNequi += nequi;
-                totalGlobalVentas += totalVentas;
+			// Filtro por fecha (opcional)
+			if (filtroFecha === 'fecha') {
+				registros = registros.filter(r => r.fecha === fechaSeleccionada);
+			}
 
-                html += `
-                    <div class="business-section">
-                        <h4>${nombresNegocios[negocio]}</h4>
-                        <div class="summary-grid">
-                            <div class="summary-box">
-                                <h4>💵 Efectivo</h4>
-                                <div class="value">${COP(efectivo)}</div>
-                                <p style="color: #666; margin-top: 10px;">${pctEfectivo}%</p>
-                            </div>
-                            <div class="summary-box">
-                                <h4>📱 Nequi</h4>
-                                <div class="value">${COP(nequi)}</div>
-                                <p style="color: #666; margin-top: 10px;">${pctNequi}%</p>
-                            </div>
-                            <div class="summary-box">
-                                <h4>Total Ventas</h4>
-                                <div class="value">${COP(totalVentas)}</div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }
+			// Coerción defensiva
+			const ventasPagadasEfectivo = registros
+				.filter(r =>
+				r.tipo === 'movimiento' &&
+				Number(r.ventas) > 0 &&
+				r.metodo === 'Efectivo' &&
+				(r.estadoPago === 'Pagado' || r.estadoPago == null)
+				)
+				.reduce((sum, r) => sum + (Number(r.ventas) || 0), 0);
 
-            // Agregar totales globales al inicio
-            const pctGlobalEfectivo = totalGlobalVentas > 0 ? ((totalGlobalEfectivo / totalGlobalVentas) * 100) : 0;
-            const pctGlobalNequi = totalGlobalVentas > 0 ? ((totalGlobalNequi / totalGlobalVentas) * 100) : 0;
+			const ventasPagadasNequi = registros
+				.filter(r =>
+				r.tipo === 'movimiento' &&
+				Number(r.ventas) > 0 &&
+				r.metodo === 'Nequi' &&
+				(r.estadoPago === 'Pagado' || r.estadoPago == null)
+				)
+				.reduce((sum, r) => sum + (Number(r.ventas) || 0), 0);
 
-            const resumenTitulo = filtroFecha === 'fecha' ? `RESUMEN DEL DÍA (${fechaSeleccionada})` : 'RESUMEN TOTAL (Acumulado)';
+			// Gastos por método (se restan del método correspondiente)
+			const gastosEfectivo = registros
+				.filter(r => r.tipo === 'movimiento' && Number(r.gastos) > 0 && r.metodo === 'Efectivo')
+				.reduce((sum, r) => sum + (Number(r.gastos) || 0), 0);
 
-            let htmlFinal = `
-                <div class="business-section" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none;">
-                    <h4 style="color: white; text-align: center; margin-bottom: 20px; font-size: 1.1em;">${resumenTitulo}</h4>
-                    <div class="summary-grid">
-                        <div class="summary-box" style="background: rgba(255,255,255,0.95); border: none;">
-                            <h4 style="color: #28a745;">💵 Total Efectivo</h4>
-                            <div class="value" style="color: #28a745;">$${totalGlobalEfectivo}</div>
-                            <p style="color: #666; margin-top: 10px; font-weight: bold;">${pctGlobalEfectivo}%</p>
-                        </div>
-                        <div class="summary-box" style="background: rgba(255,255,255,0.95); border: none;">
-                            <h4 style="color: #007bff;">📱 Total Nequi</h4>
-                            <div class="value" style="color: #007bff;">$${totalGlobalNequi}</div>
-                            <p style="color: #666; margin-top: 10px; font-weight: bold;">${pctGlobalNequi}%</p>
-                        </div>
-                        <div class="summary-box" style="background: rgba(255,255,255,0.95); border: none;">
-                            <h4 style="color: #667eea;">💰 Total General</h4>
-                            <div class="value" style="color: #667eea;">$${totalGlobalVentas}</div>
-                        </div>
-                    </div>
-                </div>
-            `;
+			const gastosNequi = registros
+				.filter(r => r.tipo === 'movimiento' && Number(r.gastos) > 0 && r.metodo === 'Nequi')
+				.reduce((sum, r) => sum + (Number(r.gastos) || 0), 0);
 
-            htmlFinal += html;
-            container.innerHTML = htmlFinal || '<p>No hay datos de pagos</p>';
-        }
+			const saldoEfectivo = ventasPagadasEfectivo - gastosEfectivo;
+			const saldoNequi = ventasPagadasNequi - gastosNequi;
+			const totalSaldo = saldoEfectivo + saldoNequi;
 
+			totalGlobalEfectivo += saldoEfectivo;
+			totalGlobalNequi += saldoNequi;
+
+			const pctEfectivo = totalSaldo > 0 ? ((saldoEfectivo / totalSaldo) * 100).toFixed(1) : 0;
+			const pctNequi = totalSaldo > 0 ? ((saldoNequi / totalSaldo) * 100).toFixed(1) : 0;
+
+			html += `
+				<div class="business-section">
+				<h4>${nombresNegocios[negocio]}</h4>
+				<div class="summary-grid">
+					<div class="summary-box">
+					<h4>💵 Saldo en Efectivo</h4>
+					<div class="value">${COP(saldoEfectivo)}</div>
+					<p style="color:#666;margin-top:10px;">${pctEfectivo}%</p>
+					</div>
+					<div class="summary-box">
+					<h4>📱 Saldo en Nequi</h4>
+					<div class="value">${COP(saldoNequi)}</div>
+					<p style="color:#666;margin-top:10px;">${pctNequi}%</p>
+					</div>
+					<div class="summary-box">
+					<h4>💰 Total Saldos</h4>
+					<div class="value">${COP(totalSaldo)}</div>
+					</div>
+				</div>
+
+				<div class="summary-card" style="margin-top:10px;">
+					<h3>Detalle</h3>
+					<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+					<div>
+						<strong>Ventas (Pagadas) Efectivo:</strong> ${COP(ventasPagadasEfectivo)}<br>
+						<strong>Gastos en Efectivo:</strong> -${COP(gastosEfectivo)}
+					</div>
+					<div>
+						<strong>Ventas (Pagadas) Nequi:</strong> ${COP(ventasPagadasNequi)}<br>
+						<strong>Gastos en Nequi:</strong> -${COP(gastosNequi)}
+					</div>
+					</div>
+				</div>
+				</div>
+			`;
+			}
+
+			const totalGlobal = totalGlobalEfectivo + totalGlobalNequi;
+			const pctGlobalEfectivo = totalGlobal > 0 ? ((totalGlobalEfectivo / totalGlobal) * 100).toFixed(1) : 0;
+			const pctGlobalNequi = totalGlobal > 0 ? ((totalGlobalNequi / totalGlobal) * 100).toFixed(1) : 0;
+			const resumenTitulo = (filtroFecha === 'fecha')
+			? `SALDOS DEL DÍA (${fechaSeleccionada})`
+			: 'SALDOS TOTALES (Acumulado)';
+
+			let htmlFinal = `
+			<div class="business-section" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none;">
+				<h4 style="color: white; text-align: center; margin-bottom: 20px; font-size: 1.1em;">${resumenTitulo}</h4>
+				<div class="summary-grid">
+				<div class="summary-box" style="background: rgba(255,255,255,0.95); border: none;">
+					<h4 style="color: #28a745;">💵 Saldo Efectivo</h4>
+					<div class="value" style="color: #28a745;">${COP(totalGlobalEfectivo)}</div>
+					<p style="color: #666; margin-top: 10px; font-weight: bold;">${pctGlobalEfectivo}%</p>
+				</div>
+				<div class="summary-box" style="background: rgba(255,255,255,0.95); border: none;">
+					<h4 style="color: #007bff;">📱 Saldo Nequi</h4>
+					<div class="value" style="color: #007bff;">${COP(totalGlobalNequi)}</div>
+					<p style="color: #666; margin-top: 10px; font-weight: bold;">${pctGlobalNequi}%</p>
+				</div>
+				<div class="summary-box" style="background: rgba(255,255,255,0.95); border: none;">
+					<h4 style="color: #667eea;">💰 Total General</h4>
+					<div class="value" style="color: #667eea;">${COP(totalGlobal)}</div>
+				</div>
+				</div>
+			</div>
+			`;
+
+			htmlFinal += html;
+			container.innerHTML = htmlFinal || '<p>No hay datos de pagos</p>';
+		}
+		
         // Generar tabla de registros
         function generarTablaRegistros(registros) {
 		  let html = '<tr><th>Fecha</th><th>Producto</th><th>Cant.</th><th>Precio</th><th>Ventas</th><th>Gastos</th><th>Método</th><th>Estado</th><th>Cliente</th><th>Descripción</th></tr>';
@@ -1560,6 +1600,7 @@
  	  onAuthStateChanged(auth, (user) => {
 		  if (user) {
 			console.log("Usuario autenticado:", user.email);
+			startInactivityTimer();
 		  } else {
 			console.log("No hay sesión activa");
 			setTimeout(() => {
