@@ -1414,16 +1414,16 @@
 	  window.where = where;
 
 	  // 🔐 VALIDAR SESIÓN
-	  //onAuthStateChanged(auth, (user) => {
-		  //if (user) {
-			//console.log("Usuario autenticado:", user.email);
-		 // } else {
-			//console.log("No hay sesión activa");
-			//setTimeout(() => {
-			  //window.location.href = "login.html";
-			//}, 500);
-		 // //}
-		//});
+	  onAuthStateChanged(auth, (user) => {
+		  if (user) {
+			console.log("Usuario autenticado:", user.email);
+		  } else {
+			console.log("No hay sesión activa");
+			setTimeout(() => {
+			  window.location.href = "login.html";
+			}, 500);
+		  }
+		});
 
 	  // 🚪 CERRAR SESIÓN
 	  window.logout = function() {
