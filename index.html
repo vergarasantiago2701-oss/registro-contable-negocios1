@@ -1026,13 +1026,11 @@
 
 			delDia.forEach(r => {
 			  if (r.tipo === "movimiento") {
-				if (r.metodo === "Efectivo") {
-				  ventasEfectivo += r.ventas || 0;
-				  totalGastos += r.gastos || 0;
-				}
-				if (r.metodo === "Nequi") {
-				  ventasNequi += r.ventas || 0;
-				}
+				const v = Number(r.ventas || 0);
+				const g = Number(r.gastos || 0);
+				if (r.metodo === "Efectivo") ventasEfectivo += v;
+				if (r.metodo === "Nequi") ventasNequi += v;
+				totalGastos += g; // SIEMPRE suma los gastos
 			  }
 			});
 
@@ -1047,24 +1045,24 @@
 				<div class="summary-grid">
 				  <div class="summary-box">
 					<h4>Ventas</h4>
-					<div class="value" style="color:#007bff;">$${totalVentas}</div>
+					<div class="value" style="color:#007bff;">${COP(totalVentas)}</div>
 				  </div>
 				  <div class="summary-box">
 					<h4>Gastos</h4>
-					<div class="value" style="color:#dc3545;">-$${totalGastos}</div>
+					<div class="value" style="color:#dc3545;">-${COP(totalGastos)}</div>
 				  </div>
 				  <div class="summary-box" style="border-color:#667eea;background:#f0f4ff;">
 					<h4>Balance del Día</h4>
-					<div class="value" style="color:#667eea;">$${balance}</div>
+					<div class="value" style="color:#667eea;">${COP(balance)}</div>
 				  </div>
 				</div>
 				<hr style="margin:15px 0;">
 				<div style="display:flex;justify-content:space-between;">
 				  <div>💵 <strong>Saldo en Efectivo:</strong><br>
-					<span style="color:#28a745;font-weight:bold;">$${saldoEfectivo}</span>
+					<span style="color:#28a745;font-weight:bold;">${COP(saldoEfectivo)}</span>
 				  </div>
 				  <div>📱 <strong>Saldo en Nequi:</strong><br>
-					<span style="color:#007bff;font-weight:bold;">$${saldoNequi}</span>
+					<span style="color:#007bff;font-weight:bold;">${COP(saldoNequi)}</span>
 				  </div>
 				</div>
 				${delDia.length > 0 ? `<table>${generarTablaRegistros(delDia)}</table>` : '<p style="color:#999;margin-top:15px;">No hay registros para esta fecha</p>'}
@@ -1237,9 +1235,14 @@
 		  let html = '<tr><th>Fecha</th><th>Producto</th><th>Cant.</th><th>Precio</th><th>Ventas</th><th>Gastos</th><th>Método</th><th>Descripción</th></tr>';
 
 		  registros.forEach(r => {
-			const precioFmt = r.precioUnitario ? COP(r.precioUnitario) : '-';
-			const ventasFmt = r.tipo === "movimiento" ? COP(ventas) : "-";
-			const gastosFmt = r.tipo === "movimiento" ? '-' + COP(gastos) : "-";
+			const ventasNum = Number(r.ventas || 0);
+			const gastosNum = Number(r.gastos || 0);
+			const precioFmt = (r.precioUnitario != null) ? COP(r.precioUnitario) : '-';
+			const ventasFmt = (r.tipo === "movimiento") ? COP(ventasNum) : "-";
+			const gastosFmt = (r.tipo === "movimiento") ? '-' + COP(gastosNum) : "-";
+			const metodoFmt = (r.tipo === "movimiento")
+			  ? (r.metodo === 'Efectivo' ? '💵 Efectivo' : '📱 Nequi')
+			  : "-";
 
 			html += `
 			  <tr>
@@ -1249,7 +1252,7 @@
 				<td>${precioFmt}</td>
 				<td style="color:#007bff;">${ventasFmt}</td>
 				<td style="color:#dc3545;">${gastosFmt}</td>
-				<td>${metodo}</td>
+				<td>${metodoFmt}</td>
 				<td>${r.descripcion || '-'}</td>
 			  </tr>
 			`;
