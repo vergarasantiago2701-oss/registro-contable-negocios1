@@ -409,6 +409,13 @@
 				  <small style="color:#666;">Si el precio es mayor a $25.000, escribe aquí el valor exacto.</small>
 				</div>
 
+				<!-- Se muestra solo cuando sea Corriente en Negocio2 -->
+				<div class="input-field" style="display:none;" id="tipoCorrienteWrap">
+					<label>Tipo de corriente:</label>
+					<input type="text" id="tipoCorriente" placeholder="Ej: pollo, res, mixta">
+					<small style="color:#666;">Obligatorio para Corriente (Negocio Almuerzos).</small>
+				</div>
+
 				<div class="summary-card">
 				  <strong>Total Venta:</strong>
 				  <span id="totalVentaPreview">$0</span>
@@ -543,7 +550,7 @@
             
             <div class="business-section">
                 <h4>Información del Sistema</h4>
-                <p><strong>Versión:</strong> 1.1</p>
+                <p><strong>Versión:</strong> 1.2</p>
                 <p><strong>Negocios Registrados:</strong> 4</p>
                 <p><strong>Datos Almacenados:</strong> <span id="totalRegistros">0</span> registros</p>
             </div>
@@ -650,6 +657,17 @@
 			precioInput.value = "";
 		  }
 
+			// --- NUEVO: mostrar/ocultar tipo de corriente ---
+			const tipoCorrienteWrap = document.getElementById("tipoCorrienteWrap");
+			const tipoCorrienteInput = document.getElementById("tipoCorriente");
+
+			if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("corriente")) {
+			tipoCorrienteWrap.style.display = "block";
+			} else {
+			tipoCorrienteWrap.style.display = "none";
+			if (tipoCorrienteInput) tipoCorrienteInput.value = "";
+			}		  
+
 		  calcularTotalVenta();
 		}
 
@@ -682,6 +700,17 @@
 			precioWrap.style.display = "none";
 			precioInput.value = "";
 		  }
+
+			// --- NUEVO: toggle del campo 'tipo de corriente' ---
+			const tipoCorrienteWrap = document.getElementById("tipoCorrienteWrap");
+			const tipoCorrienteInput = document.getElementById("tipoCorriente");
+
+			if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("corriente")) {
+			tipoCorrienteWrap.style.display = "block";
+			} else {
+			tipoCorrienteWrap.style.display = "none";
+			if (tipoCorrienteInput) tipoCorrienteInput.value = "";
+			}
 
 		  const total = precioUnitario * (cantidad || 1);
 		  document.getElementById("totalVentaPreview").textContent = COP(total);
@@ -776,6 +805,7 @@
 				negocio,
 				fecha,
 				producto: item.producto,
+				tipoCorriente: item.tipoCorriente || null,
 				cantidad: item.cantidad,
 				precioUnitario: item.precioUnitario,
 				ventas: item.ventas,
@@ -838,15 +868,15 @@
 			tr.innerHTML = `
 			  <td>${item.producto}</td>
 			  <td>${item.cantidad}</td>
-			  <td>$${Number(item.precioUnitario)}</td>
-			  <td>$${Number(totalLinea)}</td>
+			  <td>${COP(item.precioUnitario)}</td>
+			  <td>${COP(totalLinea)}</td>
 			  <td>${item.metodo === 'Efectivo' ? '💵 Efectivo' : '📱 Nequi'}</td>
 			  <td><button class="btn-danger" type="button" onclick="quitarLinea(${idx})">✖</button></td>
 			`;
 			tbody.appendChild(tr);
 		  });
 
-		  totalEl.textContent = '$' + Number(totalPedido);
+		  totalEl.textContent = COP(totalPedido);
 		  section.style.display = carrito.length > 0 ? 'block' : 'none';
 		}
 
@@ -882,11 +912,22 @@
 			  precioUnitario = personalizado;
 			}
 		  }
+		  // --- NUEVO: exigir 'tipo de corriente' para Corriente (Negocio2) ---
+			let nombreProductoParaLinea = prod.nombre;
+			if (negocio === "Negocio2" && prod.nombre.toLowerCase().includes("corriente")) {
+			const tipo = (document.getElementById("tipoCorriente").value || "").trim();
+			if (!tipo) {
+				mostrarError('Debes indicar el tipo de corriente (ej: pollo, res, mixta).');
+				return;
+			}
+			// Anexamos el tipo al nombre del producto para que se vea en el carrito y reportes
+			nombreProductoParaLinea = `Corriente (${tipo})`;
+			}
 
 		  const ventas = precioUnitario * cantidad;
 
 		  carrito.push({
-			producto: prod.nombre,
+			producto: nombreProductoParaLinea,
 			cantidad,
 			precioUnitario,
 			ventas,
@@ -906,6 +947,10 @@
 		function resetCarritoSiCambiaCorte() {
 		  carrito = [];
 		  renderCarrito();
+		  const tipoCorriente = document.getElementById('tipoCorriente');
+		  if (tipoCorriente) tipoCorriente.value = '';
+		  const wrap = document.getElementById('tipoCorrienteWrap');
+		  if (wrap) wrap.style.display = 'none';
 		}
 
 		// Hookear cambios de fecha y negocio
@@ -1182,17 +1227,18 @@
 		  let html = '<tr><th>Fecha</th><th>Producto</th><th>Cant.</th><th>Precio</th><th>Ventas</th><th>Gastos</th><th>Método</th><th>Descripción</th></tr>';
 
 		  registros.forEach(r => {
-			const ventas = r.tipo === "movimiento" ? (r.ventas || 0) : "-";
-			const gastos = r.tipo === "movimiento" ? (r.gastos || 0) : "-";
-			const metodo = r.tipo === "movimiento" ? (r.metodo === 'Efectivo' ? '💵 Efectivo' : '📱 Nequi') : "-";
+			const precioFmt = r.precioUnitario ? COP(r.precioUnitario) : '-';
+			const ventasFmt = r.tipo === "movimiento" ? COP(ventas) : "-";
+			const gastosFmt = r.tipo === "movimiento" ? '-' + COP(gastos) : "-";
+
 			html += `
 			  <tr>
 				<td>${r.fecha}</td>
 				<td>${r.producto || '-'}</td>
 				<td>${r.cantidad ?? '-'}</td>
-				<td>${r.precioUnitario ? '$' + Number(r.precioUnitario).toLocaleString('es-CO') : '-'}</td>
-				<td style="color:#007bff;">$${ventas}</td>
-				<td style="color:#dc3545;">-$${gastos}</td>
+				<td>${precioFmt}</td>
+				<td style="color:#007bff;">${ventasFmt}</td>
+				<td style="color:#dc3545;">${gastosFmt}</td>
 				<td>${metodo}</td>
 				<td>${r.descripcion || '-'}</td>
 			  </tr>
@@ -1214,6 +1260,9 @@
 		  setFechaActual();
 		  actualizarEstadoBase();
 		  cargarProductos(); // recarga selector de productos
+		  const tipoCorriente = document.getElementById('tipoCorriente');
+		  if (tipoCorriente) tipoCorriente.value = '';
+		  document.getElementById('tipoCorrienteWrap').style.display = 'none';
 		}
 
         // Mostrar mensajes
@@ -1254,14 +1303,15 @@
         // Descargar Excel (actualizado correctamente)
 		async function descargarExcel() {
 		  const datos = await obtenerTodosLosRegistros();
-		  let csv = 'Negocio,Fecha,Producto,Cantidad,Precio Unitario,Ventas,Gastos,Método,Descripción\n';
+		  let csv = 'Negocio,Fecha,Producto,Tipo Corriente,Cantidad,Precio Unitario,Ventas,Gastos,Método,Descripción\n';
 		  for (const [negocio, registros] of Object.entries(datos)) {
 			registros.forEach(r => {
 			  if (r.tipo === "movimiento") {
 				const descripcion = (r.descripcion || '').replace(/"/g, '""');
 				csv += `"${nombresNegocios[negocio]}","${r.fecha}","${r.producto || ''}",` +
-					   `${r.cantidad ?? ''},${r.precioUnitario ?? ''},${r.ventas || 0},${r.gastos || 0},` +
-					   `"${r.metodo || ''}","${descripcion}"\n`;
+				`"${r.tipoCorriente || ''}",${r.cantidad ?? ''},${r.precioUnitario ?? ''},${r.ventas || 0},${r.gastos || 0},` +
+				`"${r.metodo || ''}","${descripcion}"\n`;
+
 			  }
 			});
 		  }
@@ -1364,16 +1414,16 @@
 	  window.where = where;
 
 	  // 🔐 VALIDAR SESIÓN
-	  onAuthStateChanged(auth, (user) => {
-		  if (user) {
-			console.log("Usuario autenticado:", user.email);
-		  } else {
-			console.log("No hay sesión activa");
-			setTimeout(() => {
-			  window.location.href = "login.html";
-			}, 500);
-		  }
-		});
+	  //onAuthStateChanged(auth, (user) => {
+		  //if (user) {
+			//console.log("Usuario autenticado:", user.email);
+		 // } else {
+			//console.log("No hay sesión activa");
+			//setTimeout(() => {
+			  //window.location.href = "login.html";
+			//}, 500);
+		 // //}
+		//});
 
 	  // 🚪 CERRAR SESIÓN
 	  window.logout = function() {
