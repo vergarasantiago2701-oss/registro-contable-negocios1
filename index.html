@@ -1574,6 +1574,37 @@
 		  window.location.href = "login.html";
 		});
 	  };
+	  
+		// ============== AUTO-LOGOUT POR INACTIVIDAD (5 MIN) ==============
+		const INACTIVITY_LIMIT_MS = 5 * 60 * 1000; // 5 minutos
+		let inactivityTimer = null;
+
+		function resetInactivityTimer() {
+			if (inactivityTimer) clearTimeout(inactivityTimer);
+			inactivityTimer = setTimeout(async () => {
+			try {
+				await signOut(auth);
+			} catch (e) {
+				console.warn('Error haciendo signOut por inactividad', e);
+			} finally {
+				window.location.href = 'login.html';
+			}
+			}, INACTIVITY_LIMIT_MS);
+		}
+
+		function startInactivityTimer() {
+			resetInactivityTimer();
+
+			const resetEvents = ['mousemove','keydown','click','touchstart','scroll','visibilitychange'];
+			resetEvents.forEach(evt => {
+			document.addEventListener(evt, () => {
+				// Solo reinicia si la pestaña está activa o el usuario volvió a verla
+				if (evt !== 'visibilitychange' || document.visibilityState === 'visible') {
+				resetInactivityTimer();
+				}
+			}, { passive: true });
+			});
+		}
 	</script>
 </body>
 </html>
