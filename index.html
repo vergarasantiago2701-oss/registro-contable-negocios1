@@ -746,11 +746,21 @@
 				const data = doc.data();
 
 				// Buscar qué key corresponde al nombre real
-				const negocioKey = Object.keys(nombresNegocios)
-					.find(key => nombresNegocios[key] === data.negocio);
-
+				// Detectar tanto "Negocio2" como "Negocio Almuerzos"
+				let negocioKey = Object.keys(nombresNegocios).find(key => 
+				  nombresNegocios[key] === data.negocio || key === data.negocio
+				);
+				
+				// Si aún no se reconoce, intentar normalizar strings
+				if (!negocioKey && typeof data.negocio === 'string') {
+				  const nom = data.negocio.trim().toLowerCase();
+				  negocioKey = Object.keys(nombresNegocios).find(key => 
+				    nombresNegocios[key].toLowerCase() === nom || key.toLowerCase() === nom
+				  );
+				}
+				
 				if (negocioKey) {
-					datos[negocioKey].push(data);
+				  datos[negocioKey].push(data);
 				}
 			});
 
