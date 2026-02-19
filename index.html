@@ -363,6 +363,13 @@
 		}
 		.modal-radio{ display: grid; gap: 10px; margin-top: 10px; }
 		.radio-item{ display: flex; gap: 10px; align-items: center; cursor: pointer; }
+		
+		//inputs deshabilitados
+		input:disabled {
+		  background-color: #f5f5f5;
+		  color: #999;
+		  cursor: not-allowed;
+		}
     </style>
 </head>
 <body>
@@ -464,7 +471,6 @@
 						<th>Cant.</th>
 						<th>Precio Unit.</th>
 						<th>Total</th>
-						<th>Método</th>
 						<th></th>
 					  </tr>
 					</thead>
@@ -488,7 +494,7 @@
                 </div>
             </div>
             
-            <div class="form-group full">
+            <!-- <div class="form-group full">
                 <div class="input-field">
                     <label>Método de Pago (Ventas):</label>
                     <div class="payment-method">
@@ -502,7 +508,7 @@
                         </div>
                     </div>
                 </div>
-            </div>
+            </div> -->
             
             <div class="button-group">
                 <button class="btn-primary" onclick="abrirModalPago()">Guardar Registro</button>
@@ -519,6 +525,15 @@
                 <input type="date" id="fechaFiltro" onchange="actualizarResumen()">
             </div>
             
+			<div class="input-field" style="margin-bottom: 10px; max-width: 300px;">
+			<label class="radio-group" style="gap:8px;">
+				<input type="checkbox" id="soloDeudas" onchange="actualizarResumen()">
+				<span>Mostrar solo deudas (ventas en "Debe")</span>
+			</label>
+			</div>
+
+			<!-- Contenedor de la sección de Cuentas por Cobrar -->
+			<div id="cxcContent"></div>
             <div id="resumenContent"></div>
         </div>
         
@@ -551,6 +566,14 @@
                         <option value="fecha">Por Fecha Específica</option>
                     </select>
                 </div>
+				<!-- Toggle incluir capital inicial -->
+				<div class="input-field">
+					<label for="toggleCapitalInicial" style="user-select:none;">Opciones:</label>
+					<label class="radio-group" style="gap:10px;">
+						<input type="checkbox" id="toggleCapitalInicial" onchange="actualizarAnalisisPagos()">
+						<span>Incluir capital inicial</span>
+					</label>
+				</div>
             </div>
             
             <div id="fechaPagosContainer" style="display: none; margin-bottom: 20px;">
@@ -586,44 +609,174 @@
     </div>
 	<!-- MODAL Confirmación de pago -->
 	<div id="modalPagoBackdrop" class="modal-backdrop" style="display:none;">
-	<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalPagoTitulo">
+		<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalPagoTitulo">
+			<div class="modal-header">
+			<h3 id="modalPagoTitulo">Confirmar estado de pago</h3>
+			<button class="modal-close" onclick="cerrarModalPago()" aria-label="Cerrar">✖</button>
+			</div>
+
+			<div class="modal-body">
+			  <p style="color:#555;margin-bottom:12px;">
+				Indica cómo registrarás este movimiento.
+			  </p>
+
+			  <div class="modal-radio">
+				<label class="radio-item">
+				  <input type="radio" name="estadoPago" value="pagado" checked onchange="updateModalPagoUI()">
+				  <span>El cliente <strong>pagó todo</strong></span>
+				</label>
+				<label class="radio-item">
+				  <input type="radio" name="estadoPago" value="debe" onchange="updateModalPagoUI()">
+				  <span>El cliente <strong>quedó debiendo</strong></span>
+				</label>
+				<label class="radio-item">
+				  <input type="radio" name="estadoPago" value="soloGasto" onchange="updateModalPagoUI()">
+				  <span><strong>Solo gasto</strong> (sin ventas)</span>
+				</label>
+			  </div>
+
+			  <!-- Nombre cliente (solo si 'Debe' y hay ventas en carrito) -->
+			  <div id="nombreClienteWrap" style="display:none; margin-top:12px;">
+				<label for="nombreClienteDeudor" style="font-weight:600;color:#333;margin-bottom:6px;">
+				  Nombre del cliente (obligatorio si debe):
+				</label>
+				<input type="text" id="nombreClienteDeudor" placeholder="Ej: Juan Pérez"
+					   style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;">
+				<small style="color:#666;">Este nombre se guardará con cada línea de venta como cuenta por cobrar.</small>
+			  </div>
+
+			  <!-- Método de pago de la VENTA (solo si 'pagado' y hay carrito) -->
+			  <div id="metodoVentaWrap" style="display:none; margin-top:12px;">
+				<label style="font-weight:600;color:#333;margin-bottom:6px;display:block;">Método de pago de la venta:</label>
+				<div class="payment-method">
+				  <div class="radio-group">
+					<input type="radio" id="pagoVentaEfectivo" name="metodoVenta" value="Efectivo" checked>
+					<label for="pagoVentaEfectivo">💵 Efectivo</label>
+				  </div>
+				  <div class="radio-group">
+					<input type="radio" id="pagoVentaNequi" name="metodoVenta" value="Nequi">
+					<label for="pagoVentaNequi">📱 Nequi</label>
+				  </div>
+				</div>
+			  </div>
+
+			  <!-- Método de pago del GASTO (si hay gasto > 0) -->
+			  <div id="metodoGastoWrap" style="display:none; margin-top:12px;">
+				<label style="font-weight:600;color:#333;margin-bottom:6px;display:block;">Método de pago del gasto:</label>
+				<div class="payment-method">
+				  <div class="radio-group">
+					<input type="radio" id="pagoGastoEfectivo" name="metodoGasto" value="Efectivo" checked>
+					<label for="pagoGastoEfectivo">💵 Efectivo</label>
+				  </div>
+				  <div class="radio-group">
+					<input type="radio" id="pagoGastoNequi" name="metodoGasto" value="Nequi">
+					<label for="pagoGastoNequi">📱 Nequi</label>
+				  </div>
+				</div>
+				<small style="color:#666;">Este método solo aplica al registro de gasto.</small>
+			  </div>
+
+			  <div id="modalPagoError" class="error-message" style="display:none;margin-top:12px;">.</div>
+			</div>
+			<div class="modal-footer">
+			  <button class="btn-secondary" onclick="cerrarModalPago()">Cancelar</button>
+			  <button class="btn-primary" onclick="confirmarGuardarDesdeModal()">Confirmar y guardar</button>
+			</div>
+		</div>
+	</div>
+	<div id="modalCobrarBackdrop" class="modal-backdrop" style="display:none;">
+	  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalCobrarTitulo">
+		
+			<div class="modal-header">
+			  <h3 id="modalCobrarTitulo">Registrar Pago</h3>
+			  <button class="modal-close" onclick="cerrarModalCobrar()" aria-label="Cerrar">&times;</button>
+			</div>
+
+			<div class="modal-body">
+			  <p class="modal-instruction">Selecciona el método de pago para esta venta:</p>
+
+			  <div class="payment-options">
+					<label class="payment-radio">
+					  <input type="radio" id="cobroEfectivo" name="metodoCobro" value="Efectivo" checked>
+					  <div class="radio-content">
+						<span class="icon">💵</span>
+						<span class="text">Efectivo</span>
+					  </div>
+					</label>
+
+					<label class="payment-radio">
+					  <input type="radio" name="metodoCobro" value="Nequi">
+					  <div class="radio-content">
+						<span class="icon">📱</span>
+						<span class="text">Nequi</span>
+					  </div>
+					</label>
+			  </div>
+
+			  <div id="modalCobrarError" class="error-message" style="display:none;"></div>
+			</div>
+
+			<div class="modal-footer">
+			  <button class="btn-secondary" onclick="cerrarModalCobrar()">Cancelar</button>
+			  <button id="btnConfirmarCobro" class="btn-primary" onclick="confirmarCobro()">Confirmar Cobro</button>
+			</div>
+	  </div>
+	</div>
+	<!-- MODAL Cobro por Cliente (CxC) -->
+	<div id="modalCobroClienteBackdrop" class="modal-backdrop" style="display:none;">
+	  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalCobroClienteTitulo">
 		<div class="modal-header">
-		<h3 id="modalPagoTitulo">Confirmar estado de pago</h3>
-		<button class="modal-close" onclick="cerrarModalPago()" aria-label="Cerrar">✖</button>
+		  <h3 id="modalCobroClienteTitulo">Cobrar cuenta</h3>
+		  <button class="modal-close" onclick="cerrarModalCobroCliente()" aria-label="Cerrar">✖</button>
 		</div>
 
 		<div class="modal-body">
-		<p style="color:#555;margin-bottom:12px;">
-			Indica si el cliente <strong>pagó</strong> o <strong>quedó debiendo</strong> este pedido.
-		</p>
+		  <p><strong>Cliente:</strong> <span id="cxcClienteNombre"></span></p>
+		  <p><strong>Total por cobrar:</strong> <span id="cxcClienteDeuda">$0</span></p>
+		  <hr>
 
-		<div class="modal-radio">
+		  <div class="modal-radio">
 			<label class="radio-item">
-			<input type="radio" name="estadoPago" value="pagado" checked onclick="toggleNombreCliente(false)">
-			<span>El cliente <strong>pagó todo</strong></span>
+			  <input type="radio" name="tipoCobroCliente" value="total" checked onclick="toggleMontoParcial(false)">
+			  <span>Pago total</span>
 			</label>
 			<label class="radio-item">
-			<input type="radio" name="estadoPago" value="debe" onclick="toggleNombreCliente(true)">
-			<span>El cliente <strong>quedó debiendo</strong></span>
+			  <input type="radio" name="tipoCobroCliente" value="parcial" onclick="toggleMontoParcial(true)">
+			  <span>Pago parcial</span>
 			</label>
-		</div>
+		  </div>
 
-		<div id="nombreClienteWrap" style="display:none; margin-top:12px;">
-			<label for="nombreClienteDeudor" style="font-weight:600;color:#333;margin-bottom:6px;">Nombre del cliente (obligatorio si debe):</label>
-			<input type="text" id="nombreClienteDeudor" placeholder="Ej: Juan Pérez" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;">
-			<small style="color:#666;">Este nombre se guardará con cada línea de venta como cuenta por cobrar.</small>
-		</div>
+		  <div id="montoParcialWrap" class="input-field" style="display:none; margin-top:10px;">
+			<label for="montoParcial">Monto a cobrar (COP):</label>
+			<input type="number" id="montoParcial" min="1" step="1" placeholder="Ej: 20000">
+			<small style="color:#666;">No puede exceder el total por cobrar.</small>
+		  </div>
 
-		<div id="modalPagoError" class="error-message" style="display:none;margin-top:12px;">.</div>
+		  <div class="payment-options" style="margin-top:12px;">
+			<label class="payment-radio">
+			  <input type="radio" name="metodoCobroCliente" value="Efectivo" checked>
+			  <div class="radio-content">
+				<span class="icon">💵</span><span class="text">Efectivo</span>
+			  </div>
+			</label>
+
+			<label class="payment-radio">
+			  <input type="radio" name="metodoCobroCliente" value="Nequi">
+			  <div class="radio-content">
+				<span class="icon">📱</span><span class="text">Nequi</span>
+			  </div>
+			</label>
+		  </div>
+
+		  <div id="modalCobroClienteError" class="error-message" style="display:none;"></div>
 		</div>
 
 		<div class="modal-footer">
-		<button class="btn-secondary" onclick="cerrarModalPago()">Cancelar</button>
-		<button class="btn-primary" onclick="confirmarGuardarDesdeModal()">Confirmar y guardar</button>
+		  <button class="btn-secondary" onclick="cerrarModalCobroCliente()">Cancelar</button>
+		  <button class="btn-primary" onclick="confirmarCobroCliente()">Confirmar cobro</button>
 		</div>
+	  </div>
 	</div>
-	</div>
-
     <script>
 	
 		// ==== MAPA DE NOMBRES ====
@@ -798,10 +951,11 @@
             actualizarTotalRegistros();
             actualizarEstadoBase();
 			cargarProductos();
+			updateGastoInputsState();
         }
 		async function obtenerTodosLosRegistros() {
 			const snapshot = await getDocs(collection(db, "registros"));
-			
+
 			const datos = {
 				Negocio1: [],
 				Negocio2: [],
@@ -809,25 +963,25 @@
 				Negocio4: []
 			};
 
-			snapshot.forEach(doc => {
-				const data = doc.data();
+			snapshot.forEach(d => {
+				const data = d.data();
 
-				// Buscar qué key corresponde al nombre real
-				// Detectar tanto "Negocio2" como "Negocio Almuerzos"
-				let negocioKey = Object.keys(nombresNegocios).find(key => 
-				  nombresNegocios[key] === data.negocio || key === data.negocio
+				// Resolver key del negocio a partir del nombre almacenado
+				let negocioKey = Object.keys(nombresNegocios).find(key =>
+				nombresNegocios[key] === data.negocio || key === data.negocio
 				);
-				
-				// Si aún no se reconoce, intentar normalizar strings
+
+				// Normalizar strings por si vinieran con diferencias de casing o espacios
 				if (!negocioKey && typeof data.negocio === 'string') {
-				  const nom = data.negocio.trim().toLowerCase();
-				  negocioKey = Object.keys(nombresNegocios).find(key => 
-				    nombresNegocios[key].toLowerCase() === nom || key.toLowerCase() === nom
-				  );
+				const nom = data.negocio.trim().toLowerCase();
+				negocioKey = Object.keys(nombresNegocios).find(key =>
+					(nombresNegocios[key] || '').toLowerCase() === nom || key.toLowerCase() === nom
+				);
 				}
-				
+
 				if (negocioKey) {
-				  datos[negocioKey].push(data);
+				// ⟵ IMPORTANTE: guardar también el id del documento
+				datos[negocioKey].push({ id: d.id, ...data });
 				}
 			});
 
@@ -854,118 +1008,152 @@
 			
 		}
 
-        // Guardar datos con regla: primero base, luego ventas/gastos
-        // Guardar datos: guarda todas las líneas del carrito + un gasto opcional
-		async function guardarDatos(estadoPago = 'pagado', nombreCliente = null) {
-		  const negocioKey = document.getElementById('business').value;
-		  const negocio = nombresNegocios[negocioKey];
-		  const fecha = document.getElementById('fecha').value;
-		  const gastos = parseFloat(document.getElementById('gastos').value) || 0;
-		  let descripcion = document.getElementById('descripcion').value || ''; // para el gasto
-		  const metodoDefault = document.querySelector('input[name="metodo"]:checked').value;
+          // Guardar datos: ventas (por carrito) + gasto opcional.
+		  // - estadoPago: 'pagado' | 'debe' | 'soloGasto'
+		  // - nombreCliente: string | null
+		  // - metodoVenta: 'Efectivo' | 'Nequi' | null (solo si 'pagado' y hay carrito)
+		  // - metodoGasto: 'Efectivo' | 'Nequi' | null (si hay gasto)
+		  // - soloGasto: true para ignorar carrito y registrar SOLO el gasto
+		  async function guardarDatos({ estadoPago = 'pagado', nombreCliente = null, metodoVenta = null, metodoGasto = null, soloGasto = false } = {}) {
+			const negocioKey = document.getElementById('business').value;
+			const negocio = nombresNegocios[negocioKey];
+			const fecha = document.getElementById('fecha').value;
+			const gastos = parseFloat(document.getElementById('gastos').value) || 0;
+			let descripcion = document.getElementById('descripcion').value || '';
+			const hayCarrito = carrito.length > 0;
+			const hayGasto = gastos > 0;
 
-		  if (!fecha) {
-			mostrarError('Debes seleccionar la fecha');
-			return;
-		  }
-
-		  if (carrito.length === 0 && gastos === 0) {
-			mostrarError('Agrega al menos una línea al pedido o registra un gasto.');
-			return;
-		  }
-
-		  // Normalizar texto del estado (para Firestore)
-		  const estadoFmt = (estadoPago === 'debe') ? 'Debe' : 'Pagado';
-		  const clienteFmt = (estadoFmt === 'Debe') ? (nombreCliente || null) : null;
-
-		  try {
-			// Guardar líneas del carrito como documentos separados (VENTAS)
-			for (const item of carrito) {
-			  await addDoc(collection(db, "registros"), {
-				tipo: "movimiento",
-				negocio,
-				fecha,
-				producto: item.producto,
-				tipoCorriente: item.tipoCorriente || null, // por si ya lo usas
-				cantidad: item.cantidad,
-				precioUnitario: item.precioUnitario,
-				ventas: item.ventas,
-				gastos: 0,
-				metodo: item.metodo, // método por línea
-
-				// >>> NUEVO: Estado del pago por línea de venta
-				estadoPago: estadoFmt,               // "Pagado" | "Debe"
-				cliente: clienteFmt,                 // nombre del cliente si "Debe", si no null
-
-				descripcion: `${item.producto} x ${item.cantidad}`,
-				createdAt: new Date()
-			  });
+			if (!fecha) {
+			  mostrarError('Debes seleccionar la fecha');
+			  return;
 			}
 
-			// Guardar gasto (si lo hay) — sin estadoPago ni cliente
-			if (gastos > 0) {
-			  await addDoc(collection(db, "registros"), {
-				tipo: "movimiento",
-				negocio,
-				fecha,
-				producto: null,
-				cantidad: null,
-				precioUnitario: null,
-				ventas: 0,
-				gastos,
-				metodo: metodoDefault, // o fija "Efectivo" si prefieres
-				estadoPago: null, // NO aplica
-				cliente: null,    // NO aplica
-				descripcion: descripcion || 'Gasto del día',
-				createdAt: new Date()
-			  });
+			if (!hayCarrito && !hayGasto) {
+			  mostrarError('Agrega al menos una línea al pedido o registra un gasto.');
+			  return;
 			}
 
-			// Limpieza y feedback
-			carrito = [];
-			renderCarrito();
-			document.getElementById('gastos').value = '';
-			document.getElementById('descripcion').value = '';
-			mostrarExito();
-		  } catch (error) {
-			console.error(error);
-			mostrarError("Error guardando en la nube");
+			// Normalizar estado
+			const estadoFmt = (estadoPago === 'debe') ? 'Debe'
+							 : (estadoPago === 'pagado') ? 'Pagado'
+							 : 'soloGasto';
+
+			// Validaciones mínimas
+			if (estadoFmt === 'Pagado' && hayCarrito && !metodoVenta) {
+			  mostrarError('Selecciona el método de pago de la venta.');
+			  return;
+			}
+			if (hayGasto && !metodoGasto) {
+			  mostrarError('Selecciona el método de pago del gasto.');
+			  return;
+			}
+			if (estadoFmt === 'Debe' && hayCarrito && !(nombreCliente && nombreCliente.trim())) {
+			  mostrarError('Debes ingresar el nombre del cliente que quedó debiendo.');
+			  return;
+			}
+			if (estadoFmt === 'soloGasto' && !hayGasto) {
+			  mostrarError('Seleccionaste "Solo gasto" pero no hay valor de gasto.');
+			  return;
+			}
+
+			try {
+			  // 1) Si NO es soloGasto, guardamos las VENTAS del carrito
+			  if (!soloGasto && hayCarrito) {
+				for (const item of carrito) {
+				  await addDoc(collection(db, "registros"), {
+					tipo: "movimiento",
+					negocio,
+					fecha,
+					producto: item.producto,
+					tipoCorriente: null,
+					cantidad: item.cantidad,
+					precioUnitario: item.precioUnitario,
+					ventas: item.ventas,
+					gastos: 0,
+					// método:
+					// - Pagado: usar metodoVenta
+					// - Debe  : null (se asigna al cobrar)
+					metodo: (estadoFmt === 'Pagado') ? metodoVenta : null,
+					estadoPago: (estadoFmt === 'soloGasto') ? null : estadoFmt, // soloGasto no aplica
+					cliente: (estadoFmt === 'Debe') ? (nombreCliente || null) : null,
+					descripcion: `${item.producto} x ${item.cantidad}`,
+					createdAt: new Date()
+				  });
+				}
+			  }
+
+			  // 2) Si hay GASTO, guardarlo (no aplica estadoPago ni cliente)
+			  if (hayGasto) {
+				await addDoc(collection(db, "registros"), {
+				  tipo: "movimiento",
+				  negocio,
+				  fecha,
+				  producto: null,
+				  cantidad: null,
+				  precioUnitario: null,
+				  ventas: 0,
+				  gastos,
+				  metodo: metodoGasto,          // ← método del gasto (obligatorio si hay gasto)
+				  estadoPago: null,
+				  cliente: null,
+				  descripcion: descripcion || 'Gasto del día',
+				  createdAt: new Date()
+				});
+			  }
+
+			  // Limpieza y feedback
+			  carrito = [];
+			  renderCarrito();
+			  document.getElementById('gastos').value = '';
+			  document.getElementById('descripcion').value = '';
+			  mostrarExito();
+
+			  // Refrescar tableros relevantes
+			  try { await actualizarResumen(); } catch(e) {}
+			  try { await actualizarAnalisisPagos(); } catch(e) {}
+			  try { await actualizarAcumulado(); } catch(e) {}
+			  try { await actualizarCuentasPorCobrar(); } catch(e) {}
+
+			} catch (error) {
+			  console.error(error);
+			  mostrarError("Error guardando en la nube");
+			}
 		  }
-		}
 		
 		// ====== CARRITO (pedido en pantalla) ======
-		let carrito = []; // {producto, cantidad, precioUnitario, ventas, metodo}
+		let carrito = []; // {producto, cantidad, precioUnitario, ventas}
 
 		// Render del carrito
 		function renderCarrito() {
-		  const tbody = document.querySelector('#carritoTabla tbody');
-		  const section = document.getElementById('carritoSection');
-		  const totalEl = document.getElementById('carritoTotal');
+			const tbody = document.querySelector('#carritoTabla tbody');
+			const section = document.getElementById('carritoSection');
+			const totalEl = document.getElementById('carritoTotal');
 
-		  if (!tbody || !section || !totalEl) return;
+			if (!tbody || !section || !totalEl) return;
 
-		  tbody.innerHTML = '';
+			tbody.innerHTML = '';
+			let totalPedido = 0;
 
-		  let totalPedido = 0;
+			carrito.forEach((item, idx) => {
+			  const tr = document.createElement('tr');
+			  const totalLinea = item.ventas || 0;
+			  totalPedido += totalLinea;
 
-		  carrito.forEach((item, idx) => {
-			const tr = document.createElement('tr');
-			const totalLinea = item.ventas || 0;
-			totalPedido += totalLinea;
+			  tr.innerHTML = `
+				<td>${item.producto}</td>
+				<td>${item.cantidad}</td>
+				<td>${COP(item.precioUnitario)}</td>
+				<td>${COP(totalLinea)}</td>
+				<td><button class="btn-danger" type="button" onclick="quitarLinea(${idx})">✖</button></td>
+			  `;
+			  tbody.appendChild(tr);
+			});
 
-			tr.innerHTML = `
-			  <td>${item.producto}</td>
-			  <td>${item.cantidad}</td>
-			  <td>${COP(item.precioUnitario)}</td>
-			  <td>${COP(totalLinea)}</td>
-			  <td>${item.metodo === 'Efectivo' ? '💵 Efectivo' : '📱 Nequi'}</td>
-			  <td><button class="btn-danger" type="button" onclick="quitarLinea(${idx})">✖</button></td>
-			`;
-			tbody.appendChild(tr);
-		  });
-
-		  totalEl.textContent = COP(totalPedido);
-		  section.style.display = carrito.length > 0 ? 'block' : 'none';
+			totalEl.textContent = COP(totalPedido);
+			section.style.display = carrito.length > 0 ? 'block' : 'none';
+			
+			// 👇 NUEVO: actualizar el estado de los inputs de gasto
+			  updateGastoInputsState();
 		}
 
 		// Quitar línea del carrito
@@ -976,59 +1164,58 @@
 
 		// Agregar línea al carrito
 		function agregarAlCarrito() {
-		  const negocio = document.getElementById('business').value;
-		  const index = document.getElementById("productoSelect").value;
-		  const cantidad = parseInt(document.getElementById("cantidad").value, 10) || 0;
-		  const metodo = document.querySelector('input[name="metodo"]:checked').value;
+			const negocio = document.getElementById('business').value;
+			const index = document.getElementById("productoSelect").value;
+			const cantidad = parseInt(document.getElementById("cantidad").value, 10) || 0;
 
-		  if (!productos[negocio] || index === 'manual' || !productos[negocio][index]) {
-			mostrarError('Selecciona un producto del catálogo para agregar al pedido.');
-			return;
-		  }
-		  if (cantidad <= 0) {
-			mostrarError('La cantidad debe ser mayor a 0');
-			return;
-		  }
-
-		  const prod = productos[negocio][index];
-		  let precioUnitario = prod.precio || 0;
-
-		  // Mojarra con precio personalizado
-		  if (negocio === "Negocio2" && prod.nombre.toLowerCase().includes("mojarra")) {
-			const personalizado = parseInt(document.getElementById("precioPersonalizado").value, 10);
-			if (!isNaN(personalizado) && personalizado > 25000) {
-			  precioUnitario = personalizado;
+			if (!productos[negocio] || index === 'manual' || !productos[negocio][index]) {
+			  mostrarError('Selecciona un producto del catálogo para agregar al pedido.');
+			  return;
 			}
-		  }
-		  // --- NUEVO: exigir 'tipo de corriente' para Corriente (Negocio2) ---
+			if (cantidad <= 0) {
+			  mostrarError('La cantidad debe ser mayor a 0');
+			  return;
+			}
+
+			const prod = productos[negocio][index];
+			let precioUnitario = prod.precio || 0;
+
+			// Mojarra con precio personalizado
+			if (negocio === "Negocio2" && prod.nombre.toLowerCase().includes("mojarra")) {
+			  const personalizado = parseInt(document.getElementById("precioPersonalizado").value, 10);
+			  if (!isNaN(personalizado) && personalizado > 25000) {
+				precioUnitario = personalizado;
+			  }
+			}
+
+			// Exigir 'tipo de corriente' para Corriente (Negocio2)
 			let nombreProductoParaLinea = prod.nombre;
 			if (negocio === "Negocio2" && prod.nombre.toLowerCase().includes("corriente")) {
-			const tipo = (document.getElementById("tipoCorriente").value || "").trim();
-			if (!tipo) {
+			  const tipo = (document.getElementById("tipoCorriente").value || "").trim();
+			  if (!tipo) {
 				mostrarError('Debes indicar el tipo de corriente (ej: pollo, res, mixta).');
 				return;
+			  }
+			  nombreProductoParaLinea = `Corriente (${tipo})`;
 			}
-			// Anexamos el tipo al nombre del producto para que se vea en el carrito y reportes
-			nombreProductoParaLinea = `Corriente (${tipo})`;
-			}
 
-		  const ventas = precioUnitario * cantidad;
+			const ventas = precioUnitario * cantidad;
 
-		  carrito.push({
-			producto: nombreProductoParaLinea,
-			cantidad,
-			precioUnitario,
-			ventas,
-			metodo
-		  });
+			carrito.push({
+			  producto: nombreProductoParaLinea,
+			  cantidad,
+			  precioUnitario,
+			  ventas
+			  // ❌ ya no guardamos método aquí
+			});
 
-		  // Reset mínimos del bloque de venta
-		  document.getElementById('cantidad').value = '1';
-		  const p = document.getElementById('precioPersonalizado');
-		  if (p) p.value = '';
+			// Reset mínimos del bloque de venta
+			document.getElementById('cantidad').value = '1';
+			const p = document.getElementById('precioPersonalizado');
+			if (p) p.value = '';
 
-		  calcularTotalVenta();
-		  renderCarrito();
+			calcularTotalVenta();
+			renderCarrito();
 		}
 
 		// Vaciar carrito si cambia fecha/negocio (para no mezclar cortes)
@@ -1039,6 +1226,7 @@
 		  if (tipoCorriente) tipoCorriente.value = '';
 		  const wrap = document.getElementById('tipoCorrienteWrap');
 		  if (wrap) wrap.style.display = 'none';
+		  updateGastoInputsState();
 		}
 
 		// Hookear cambios de fecha y negocio
@@ -1088,27 +1276,41 @@
 		  `;
 		}
 		
-		// Actualizar resumen diario
-        async function actualizarResumen(){
+		// === Reemplazar COMPLETO ===
+		async function actualizarResumen() {
 		  const fecha = document.getElementById('fechaFiltro').value;
+		  const soloDeudas = !!document.getElementById('soloDeudas')?.checked;
+		  const excluirDeudasResumen = true;
 		  const datos = await obtenerTodosLosRegistros();
 		  const container = document.getElementById('resumenContent');
 		  let html = '';
 
 		  for (const [negocio, registros] of Object.entries(datos)) {
+			// Registros del día (por negocio)
 			const delDia = registros.filter(r => r.fecha === fecha);
+
+			// === BLOQUE NUEVO: cálculo de saldos del día (con o sin deudas) ===
+			const registrosParaSaldos = excluirDeudasResumen
+			  ? delDia.filter(r => r.tipo === "movimiento" && (r.estadoPago === 'Pagado' || r.estadoPago == null))
+			  : delDia;
 
 			let ventasEfectivo = 0;
 			let ventasNequi = 0;
 			let totalGastos = 0;
 
-			delDia.forEach(r => {
+			// Ventas: usar registrosParaSaldos
+			registrosParaSaldos.forEach(r => {
 			  if (r.tipo === "movimiento") {
 				const v = Number(r.ventas || 0);
-				const g = Number(r.gastos || 0);
 				if (r.metodo === "Efectivo") ventasEfectivo += v;
 				if (r.metodo === "Nequi") ventasNequi += v;
-				totalGastos += g; // SIEMPRE suma los gastos
+			  }
+			});
+
+			// Gastos: SIEMPRE sumar del día completo
+			delDia.forEach(r => {
+			  if (r.tipo === "movimiento") {
+				totalGastos += Number(r.gastos || 0);
 			  }
 			});
 
@@ -1116,6 +1318,15 @@
 			const balance = totalVentas - totalGastos;
 			const saldoEfectivo = ventasEfectivo - totalGastos;
 			const saldoNequi = ventasNequi;
+
+			// === Tabla del día: respeta el filtro "Solo Deudas" ===
+			const registrosParaTabla = soloDeudas
+			  ? delDia.filter(r =>
+				  r.tipo === 'movimiento' &&
+				  Number(r.ventas) > 0 &&
+				  r.estadoPago === 'Debe'
+				)
+			  : delDia;
 
 			html += `
 			  <div class="business-section">
@@ -1143,15 +1354,292 @@
 					<span style="color:#007bff;font-weight:bold;">${COP(saldoNequi)}</span>
 				  </div>
 				</div>
-				${delDia.length > 0 ? `<table>${generarTablaRegistros(delDia)}</table>` : '<p style="color:#999;margin-top:15px;">No hay registros para esta fecha</p>'}
-				${agruparPlatosPorProducto(delDia)}
+				${registrosParaTabla.length > 0 ? `<table>${generarTablaRegistros(registrosParaTabla)}</table>` : '<p style="color:#999;margin-top:15px;">No hay registros para esta fecha</p>'}
+				${agruparPlatosPorProducto(registrosParaTabla)}
 			  </div>
 			`;
 		  }
 
 		  container.innerHTML = html || '<p>No hay datos</p>';
 		}
+		
+		// === Reemplazar COMPLETO ===
+		async function actualizarCuentasPorCobrar() {
+		  const container = document.getElementById('cxcContent');
+		  if (!container) return;
 
+		  const datos = await obtenerTodosLosRegistros();
+
+		  // Agrupar por cliente (todas las fechas, todos los negocios)
+		  const mapaClientes = new Map(); // cliente -> { totalPendiente, cantidadVentas }
+
+		  let totalGeneral = 0;
+		  let totalVentasPendientes = 0;
+
+		  for (const registros of Object.values(datos)) {
+			registros.forEach(r => {
+			  if (r.tipo === 'movimiento' && r.estadoPago === 'Debe') {
+				const pendiente = Number((r.montoPendiente != null ? r.montoPendiente : r.ventas) || 0);
+				if (pendiente > 0) {
+				  const cliente = (r.cliente && String(r.cliente).trim()) ? r.cliente.trim() : 'Sin nombre';
+				  const prev = mapaClientes.get(cliente) || { totalPendiente: 0, cantidadVentas: 0 };
+				  prev.totalPendiente += pendiente;
+				  prev.cantidadVentas += 1;
+				  mapaClientes.set(cliente, prev);
+
+				  totalGeneral += pendiente;
+				  totalVentasPendientes += 1;
+				}
+			  }
+			});
+		  }
+
+		  // Orden por mayor deuda
+		  const filas = [...mapaClientes.entries()]
+			.sort((a, b) => b[1].totalPendiente - a[1].totalPendiente)
+			.map(([cliente, info]) => {
+			  const clienteSafe = cliente.replace(/'/g, "\\'");
+			  return `
+				<tr>
+				  <td>${cliente}</td>
+				  <td style="text-align:center;">${info.cantidadVentas}</td>
+				  <td style="text-align:right;">${COP(info.totalPendiente)}</td>
+				  <td style="text-align:center;">
+					<button class="btn-success" type="button"
+					  onclick="abrirModalCobroCliente('${clienteSafe}', ${info.totalPendiente})">
+					  Cobrar
+					</button>
+				  </td>
+				</tr>
+			  `;
+			}).join('');
+
+		  const clientesUnicos = mapaClientes.size;
+
+		  const html = `
+			<div class="business-section" style="border-left-color:#dc3545;">
+			  <h3>💳 Cuentas por Cobrar (Acumulado)</h3>
+			  <div class="summary-grid">
+				<div class="summary-box">
+				  <h4>Total por Cobrar</h4>
+				  <div class="value" style="color:#dc3545;">${COP(totalGeneral)}</div>
+				</div>
+				<div class="summary-box">
+				  <h4>Clientes con deuda</h4>
+				  <div class="value">${clientesUnicos}</div>
+				</div>
+				<div class="summary-box">
+				  <h4>Ventas pendientes</h4>
+				  <div class="value">${totalVentasPendientes}</div>
+				</div>
+			  </div>
+
+			  ${
+				clientesUnicos > 0
+				? `
+				  <table>
+					<thead>
+					  <tr>
+						<th>Cliente</th>
+						<th style="width:140px;"># Ventas</th>
+						<th style="width:200px;">Total Pendiente (COP)</th>
+						<th style="width:140px;">Acciones</th>
+					  </tr>
+					</thead>
+					<tbody>
+					  ${filas}
+					</tbody>
+				  </table>
+				`
+				: '<p style="color:#28a745;margin-top:10px;">No hay deudas pendientes. ✅</p>'
+			  }
+			</div>
+		  `;
+
+		  container.innerHTML = html;
+		}
+		
+		//modal por cliente
+		let clienteACobrar = null;
+		let deudaClienteActual = 0;
+
+		function abrirModalCobroCliente(cliente, deuda) {
+		  clienteACobrar = cliente;
+		  deudaClienteActual = Number(deuda) || 0;
+
+		  document.getElementById('cxcClienteNombre').textContent = clienteACobrar;
+		  document.getElementById('cxcClienteDeuda').textContent = COP(deudaClienteActual);
+
+		  document.querySelector('input[name="tipoCobroCliente"][value="total"]').checked = true;
+		  toggleMontoParcial(false);
+		  const monto = document.getElementById('montoParcial');
+		  if (monto) monto.value = '';
+
+		  document.querySelector('input[name="metodoCobroCliente"][value="Efectivo"]').checked = true;
+
+		  const err = document.getElementById('modalCobroClienteError');
+		  err.style.display = 'none'; err.textContent = '';
+
+		  document.getElementById('modalCobroClienteBackdrop').style.display = 'flex';
+		}
+
+		function cerrarModalCobroCliente() {
+		  document.getElementById('modalCobroClienteBackdrop').style.display = 'none';
+		  clienteACobrar = null;
+		  deudaClienteActual = 0;
+		}
+
+		function toggleMontoParcial(show) {
+		  const wrap = document.getElementById('montoParcialWrap');
+		  if (wrap) wrap.style.display = show ? 'block' : 'none';
+		}
+		
+		function updateModalPagoUI() {
+			const estado = document.querySelector('input[name="estadoPago"]:checked')?.value || 'pagado';
+			const hayCarrito = (carrito && carrito.length > 0);
+			const gastos = parseFloat(document.getElementById('gastos').value) || 0;
+			const hayGasto = gastos > 0;
+
+			// Nombre cliente solo si 'Debe' y hay ventas
+			const nombreWrap = document.getElementById('nombreClienteWrap');
+			if (nombreWrap) nombreWrap.style.display = (estado === 'debe' && hayCarrito) ? 'block' : 'none';
+
+			// Método de pago de la venta solo si 'pagado' y hay ventas
+			const ventaWrap = document.getElementById('metodoVentaWrap');
+			if (ventaWrap) ventaWrap.style.display = (estado === 'pagado' && hayCarrito) ? 'block' : 'none';
+
+			// Método del gasto si hay gasto (independiente del estado)
+			const gastoWrap = document.getElementById('metodoGastoWrap');
+			if (gastoWrap) gastoWrap.style.display = hayGasto ? 'block' : 'none';
+		}
+		
+		// === Cobro por cliente: total/parcial con método ===
+		async function confirmarCobroCliente() {
+		  const err = document.getElementById('modalCobroClienteError');
+
+		  try {
+			if (!clienteACobrar) {
+			  err.textContent = '✗ No hay cliente seleccionado.'; err.style.display = 'block';
+			  return;
+			}
+
+			const tipo = document.querySelector('input[name="tipoCobroCliente"]:checked')?.value || 'total';
+			const metodo = document.querySelector('input[name="metodoCobroCliente"]:checked')?.value || 'Efectivo';
+
+			let montoParcial = 0;
+			if (tipo === 'parcial') {
+			  montoParcial = parseInt(document.getElementById('montoParcial').value, 10) || 0;
+			  if (montoParcial <= 0) {
+				err.textContent = '✗ Ingresa un monto válido para el pago parcial.'; err.style.display = 'block';
+				return;
+			  }
+			  if (montoParcial > deudaClienteActual) {
+				err.textContent = '✗ El monto parcial no puede exceder la deuda total del cliente.'; err.style.display = 'block';
+				return;
+			  }
+			}
+
+			// Cargar todas las ventas "Debe" del cliente (de todos los negocios)
+			const datos = await obtenerTodosLosRegistros();
+			const deudas = [];
+			for (const regs of Object.values(datos)) {
+			  regs.forEach(r => {
+				const cliente = (r.cliente && String(r.cliente).trim()) ? r.cliente.trim() : 'Sin nombre';
+				if (
+				  r.tipo === 'movimiento' &&
+				  r.estadoPago === 'Debe' &&
+				  cliente === clienteACobrar
+				) {
+				  const pendiente = Number((r.montoPendiente != null ? r.montoPendiente : r.ventas) || 0);
+				  if (pendiente > 0) {
+					deudas.push({ ...r, pendiente });
+				  }
+				}
+			  });
+			}
+
+			if (deudas.length === 0) {
+			  err.textContent = '✗ No hay deudas pendientes para este cliente.'; err.style.display = 'block';
+			  return;
+			}
+
+			// Orden FIFO: por createdAt (si existe) o por fecha
+			deudas.sort((a, b) => {
+			  const ta = (a.createdAt && a.createdAt.toMillis) ? a.createdAt.toMillis() : new Date(a.fecha).getTime();
+			  const tb = (b.createdAt && b.createdAt.toMillis) ? b.createdAt.toMillis() : new Date(b.fecha).getTime();
+			  return ta - tb;
+			});
+
+			if (tipo === 'total') {
+			  // Pago total: marcar todas las ventas como Pagado (no creamos abonos)
+			  await Promise.all(
+				deudas.map(r =>
+				  updateDoc(doc(db, "registros", r.id), {
+					estadoPago: 'Pagado',
+					metodo: metodo,
+					montoPendiente: 0
+				  })
+				)
+			  );
+			} else {
+			  // Pago parcial: repartir el monto por orden FIFO creando "abonos" como movimientos Pagados
+			  let restante = montoParcial;
+			  for (const r of deudas) {
+				if (restante <= 0) break;
+
+				const aplicar = Math.min(restante, r.pendiente);
+				const nuevoPendiente = r.pendiente - aplicar;
+
+				// 1) Crear un movimiento de "abono" (entra a caja hoy por el método elegido)
+				await addDoc(collection(db, "registros"), {
+				  tipo: "movimiento",
+				  negocio: r.negocio,               // mismo negocio del ítem original
+				  fecha: new Date().toISOString().split('T')[0], // hoy
+				  producto: null,                   // es un abono, no un ítem vendido
+				  cantidad: null,
+				  precioUnitario: null,
+				  ventas: aplicar,
+				  gastos: 0,
+				  metodo: metodo,
+				  estadoPago: 'Pagado',
+				  cliente: clienteACobrar,
+				  esAbono: true,                    // flag para identificar abonos
+				  descripcion: `Cobro parcial de deuda (venta del ${r.fecha})`,
+				  createdAt: new Date()
+				});
+
+				// 2) Marcar el original con montoPendiente y bandera para no duplicar en análisis
+				const updatePayload = {
+				  montoPendiente: nuevoPendiente,
+				  excluirDeAnalisis: true
+				};
+				if (nuevoPendiente <= 0) {
+				  updatePayload.estadoPago = 'Pagado';
+				} else {
+				  updatePayload.estadoPago = 'Debe';
+				}
+				await updateDoc(doc(db, "registros", r.id), updatePayload);
+
+				restante -= aplicar;
+			  }
+			}
+
+			cerrarModalCobroCliente();
+			mostrarExito();
+
+			// Refrescar tableros
+			try { await actualizarCuentasPorCobrar(); } catch (e) {}
+			try { await actualizarResumen(); } catch (e) {}
+			try { await actualizarAnalisisPagos(); } catch (e) {}
+			try { await actualizarAcumulado(); } catch (e) {}
+
+		  } catch (e) {
+			console.error(e);
+			err.textContent = '✗ Error registrando el cobro del cliente.';
+			err.style.display = 'block';
+		  }
+		}
+		
         // Actualizar cuentas acumuladas
         async function actualizarAcumulado() {
 
@@ -1161,45 +1649,65 @@
 
 			for (const [negocio, registros] of Object.entries(datos)) {
 
-				let saldoEfectivo = saldoInicial[negocio].efectivo;
-				let saldoNequi = saldoInicial[negocio].nequi;
+			  // Saldos iniciales
+			  let saldoEfectivo = Number(saldoInicial[negocio]?.efectivo || 0);
+			  let saldoNequi   = Number(saldoInicial[negocio]?.nequi || 0);
 
-				let totalVentas = 0;
-				let totalGastos = 0;
+			  // 1) Ventas de productos (NO contar abonos)
+			  //    - r.ventas > 0
+			  //    - debe tener 'producto' (los abonos no lo tienen)
+			  //    - excluir si viene marcado como abono (flag) o por descripción
+			  const totalVentasProductos = registros.reduce((sum, r) => {
+				const esMovimiento = r.tipo === 'movimiento';
+				const esVenta      = Number(r.ventas || 0) > 0;
+				const tieneProducto = !!r.producto;
+				const esAbonoFlag  = r.esAbono === true;
+				const esAbonoPorDescripcion = typeof r.descripcion === 'string' &&
+				  r.descripcion.toLowerCase().includes('cobro parcial');
 
-				registros.forEach(r => {
+				if (esMovimiento && esVenta && tieneProducto && !esAbonoFlag && !esAbonoPorDescripcion) {
+				  return sum + Number(r.ventas || 0);
+				}
+				return sum;
+			  }, 0);
 
-					if (r.tipo === "movimiento") {
+			  // 2) Gastos totales (da igual si el doc es abono u otro, abonos traen gastos=0)
+			  const totalGastos = registros.reduce((sum, r) => {
+				if (r.tipo === 'movimiento') {
+				  return sum + Number(r.gastos || 0);
+				}
+				return sum;
+			  }, 0);
 
-						totalVentas += r.ventas || 0;
-						totalGastos += r.gastos || 0;
+			  // 3) Flujos reales por método → (ventas pagadas + abonos) - gastos
+			  //    - Esto mantiene abonos como ENTRADAS de efectivo/nequi, que es correcto
+			  registros.forEach(r => {
+				if (r.tipo !== 'movimiento') return;
+				const v = Number(r.ventas || 0);
+				const g = Number(r.gastos || 0);
 
-						if (r.metodo === "Efectivo") {
-							saldoEfectivo += (r.ventas || 0) - (r.gastos || 0);
-						}
+				if (r.metodo === "Efectivo") {
+				  saldoEfectivo += v - g;
+				} else if (r.metodo === "Nequi") {
+				  saldoNequi += v - g;
+				}
+			  });
 
-						if (r.metodo === "Nequi") {
-							saldoNequi += (r.ventas || 0);
-						}
-					}
-				});
+			  const saldoTotal = saldoEfectivo + saldoNequi;
 
-				const saldoTotal = saldoEfectivo + saldoNequi;
-
-				html += `
-					<div class="summary-box">
-						<h4>${nombresNegocios[negocio]}</h4>
-						<p><strong>Capital Inicial:</strong> ${COP(saldoInicial[negocio].efectivo + saldoInicial[negocio].nequi)}</p>
-						<p><strong>Ventas Totales:</strong> ${COP(totalVentas)}</p>
-						<p><strong>Gastos Totales:</strong> -${COP(totalGastos)}</p>
-						<hr>
-						<p><strong>Saldo Total Real:</strong> ${COP(saldoTotal)}</p>
-						<hr>
-						<p>💵 Saldo Efectivo: ${COP(saldoEfectivo)}</p>
-						<p>📱 Saldo Nequi: ${COP(saldoNequi)}</p>
-
-					</div>
-				`;
+			  html += `
+				<div class="summary-box">
+				  <h4>${nombresNegocios[negocio]}</h4>
+				  <p><strong>Capital Inicial:</strong> ${COP((saldoInicial[negocio]?.efectivo || 0) + (saldoInicial[negocio]?.nequi || 0))}</p>
+				  <p><strong>Ventas Totales:</strong> ${COP(totalVentasProductos)}</p>
+				  <p><strong>Gastos Totales:</strong> -${COP(totalGastos)}</p>
+				  <hr>
+				  <p><strong>Saldo Total Real:</strong> ${COP(saldoTotal)}</p>
+				  <hr>
+				  <p>💵 Saldo Efectivo: ${COP(saldoEfectivo)}</p>
+				  <p>📱 Saldo Nequi: ${COP(saldoNequi)}</p>
+				</div>
+			  `;
 			}
 
 			container.innerHTML = html;
@@ -1209,6 +1717,8 @@
 		async function actualizarAnalisisPagos() {
 			const negocioFiltro = document.getElementById('negocioFiltro').value;
 			const filtroFecha = document.getElementById('filtroFechaPagos').value;
+			const incluirInicial = !!document.getElementById('toggleCapitalInicial')?.checked;
+
 			const datos = await obtenerTodosLosRegistros();
 			const container = document.getElementById('analisisPagosContent');
 			const fechaPagosContainer = document.getElementById('fechaPagosContainer');
@@ -1224,13 +1734,14 @@
 			}
 
 			const fechaSeleccionada = document.getElementById('fechaSeleccionadaPagos').value;
-			let html = '';
 
 			const negocios = (negocioFiltro === 'Todos') ? Object.keys(datos) : [negocioFiltro];
 
 			// Totales globales (saldos reales)
 			let totalGlobalEfectivo = 0;
 			let totalGlobalNequi = 0;
+
+			let html = '';
 
 			for (const negocio of negocios) {
 			let registros = datos[negocio] || [];
@@ -1240,26 +1751,28 @@
 				registros = registros.filter(r => r.fecha === fechaSeleccionada);
 			}
 
-			// Coerción defensiva
+			// Ventas pagadas por método (excluye originales marcados para no duplicar)
 			const ventasPagadasEfectivo = registros
-				.filter(r =>
+			  .filter(r =>
 				r.tipo === 'movimiento' &&
 				Number(r.ventas) > 0 &&
 				r.metodo === 'Efectivo' &&
-				(r.estadoPago === 'Pagado' || r.estadoPago == null)
-				)
-				.reduce((sum, r) => sum + (Number(r.ventas) || 0), 0);
+				(r.estadoPago === 'Pagado' || r.estadoPago == null) &&
+				r.excluirDeAnalisis !== true
+			  )
+			  .reduce((sum, r) => sum + (Number(r.ventas) || 0), 0);
 
 			const ventasPagadasNequi = registros
-				.filter(r =>
+			  .filter(r =>
 				r.tipo === 'movimiento' &&
 				Number(r.ventas) > 0 &&
 				r.metodo === 'Nequi' &&
-				(r.estadoPago === 'Pagado' || r.estadoPago == null)
-				)
-				.reduce((sum, r) => sum + (Number(r.ventas) || 0), 0);
+				(r.estadoPago === 'Pagado' || r.estadoPago == null) &&
+				r.excluirDeAnalisis !== true
+			  )
+			  .reduce((sum, r) => sum + (Number(r.ventas) || 0), 0);
 
-			// Gastos por método (se restan del método correspondiente)
+			// Gastos por método
 			const gastosEfectivo = registros
 				.filter(r => r.tipo === 'movimiento' && Number(r.gastos) > 0 && r.metodo === 'Efectivo')
 				.reduce((sum, r) => sum + (Number(r.gastos) || 0), 0);
@@ -1268,8 +1781,13 @@
 				.filter(r => r.tipo === 'movimiento' && Number(r.gastos) > 0 && r.metodo === 'Nequi')
 				.reduce((sum, r) => sum + (Number(r.gastos) || 0), 0);
 
-			const saldoEfectivo = ventasPagadasEfectivo - gastosEfectivo;
-			const saldoNequi = ventasPagadasNequi - gastosNequi;
+			// Capital inicial por método (opcional, toggle)
+			const inicialEfectivo = incluirInicial ? (saldoInicial[negocio]?.efectivo || 0) : 0;
+			const inicialNequi = incluirInicial ? (saldoInicial[negocio]?.nequi || 0) : 0;
+
+			// Saldos reales por método
+			const saldoEfectivo = inicialEfectivo + ventasPagadasEfectivo - gastosEfectivo;
+			const saldoNequi = inicialNequi + ventasPagadasNequi - gastosNequi;
 			const totalSaldo = saldoEfectivo + saldoNequi;
 
 			totalGlobalEfectivo += saldoEfectivo;
@@ -1302,10 +1820,12 @@
 					<h3>Detalle</h3>
 					<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
 					<div>
+						<strong>Inicial Efectivo:</strong> ${COP(inicialEfectivo)}<br>
 						<strong>Ventas (Pagadas) Efectivo:</strong> ${COP(ventasPagadasEfectivo)}<br>
 						<strong>Gastos en Efectivo:</strong> -${COP(gastosEfectivo)}
 					</div>
 					<div>
+						<strong>Inicial Nequi:</strong> ${COP(inicialNequi)}<br>
 						<strong>Ventas (Pagadas) Nequi:</strong> ${COP(ventasPagadasNequi)}<br>
 						<strong>Gastos en Nequi:</strong> -${COP(gastosNequi)}
 					</div>
@@ -1318,9 +1838,12 @@
 			const totalGlobal = totalGlobalEfectivo + totalGlobalNequi;
 			const pctGlobalEfectivo = totalGlobal > 0 ? ((totalGlobalEfectivo / totalGlobal) * 100).toFixed(1) : 0;
 			const pctGlobalNequi = totalGlobal > 0 ? ((totalGlobalNequi / totalGlobal) * 100).toFixed(1) : 0;
-			const resumenTitulo = (filtroFecha === 'fecha')
-			? `SALDOS DEL DÍA (${fechaSeleccionada})`
+
+			const baseTitulo = (filtroFecha === 'fecha')
+			? `SALDOS DEL DÍA (${document.getElementById('fechaSeleccionadaPagos').value})`
 			: 'SALDOS TOTALES (Acumulado)';
+
+			const resumenTitulo = incluirInicial ? `${baseTitulo} — (incluye capital inicial)` : baseTitulo;
 
 			let htmlFinal = `
 			<div class="business-section" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none;">
@@ -1348,9 +1871,13 @@
 			container.innerHTML = htmlFinal || '<p>No hay datos de pagos</p>';
 		}
 		
-        // Generar tabla de registros
-        function generarTablaRegistros(registros) {
-		  let html = '<tr><th>Fecha</th><th>Producto</th><th>Cant.</th><th>Precio</th><th>Ventas</th><th>Gastos</th><th>Método</th><th>Estado</th><th>Cliente</th><th>Descripción</th></tr>';
+		// === Reemplazar COMPLETO ===
+		function generarTablaRegistros(registros) {
+		  let html = '<tr>' +
+			'<th>Fecha</th><th>Producto</th><th>Cant.</th><th>Precio</th>' +
+			'<th>Ventas</th><th>Gastos</th><th>Método</th><th>Estado</th>' +
+			'<th>Cliente</th><th>Descripción</th><th>Pendiente</th><th>Acciones</th>' +
+		  '</tr>';
 
 		  registros.forEach(r => {
 			const ventasNum = Number(r.ventas || 0);
@@ -1361,8 +1888,19 @@
 			const clienteFmt = r.cliente || '-';
 			const gastosFmt = (r.tipo === "movimiento") ? '-' + COP(gastosNum) : "-";
 			const metodoFmt = (r.tipo === "movimiento")
-			  ? (r.metodo === 'Efectivo' ? '💵 Efectivo' : '📱 Nequi')
+			  ? (r.metodo === 'Efectivo' ? '💵 Efectivo' : (r.metodo === 'Nequi' ? '📱 Nequi' : (r.metodo || '-')))
 			  : "-";
+
+			// NUEVO: calcular “Pendiente” por línea (si está en Debe)
+			const pendienteFmt = (r.estadoPago === 'Debe')
+			  ? COP((r.montoPendiente != null ? r.montoPendiente : r.ventas) || 0)
+			  : '-';
+
+			// Mostrar botón Cobrar si está "Debe" y es una venta
+			const puedeCobrar = r.tipo === 'movimiento' && ventasNum > 0 && estadoFmt === 'Debe' && !!r.id;
+			const acciones = puedeCobrar
+			  ? `<button class="btn-success" type="button" onclick="abrirModalCobrar('${r.id}')">Cobrar</button>`
+			  : '-';
 
 			html += `
 			  <tr>
@@ -1376,6 +1914,8 @@
 				<td>${estadoFmt}</td>
 				<td>${clienteFmt}</td>
 				<td>${r.descripcion || '-'}</td>
+				<td style="color:#d39e00;font-weight:600;">${pendienteFmt}</td>
+				<td>${acciones}</td>
 			  </tr>
 			`;
 		  });
@@ -1388,7 +1928,6 @@
 		  document.getElementById('gastos').value = '';
 		  document.getElementById('descripcion').value = '';
 		  document.getElementById('cantidad').value = '1';
-		  document.getElementById('efectivo').checked = true;
 		  document.getElementById('totalVentaPreview').textContent = '$0';
 		  const precioInput = document.getElementById("precioPersonalizado");
 		  if (precioInput) precioInput.value = '';
@@ -1398,6 +1937,7 @@
 		  const tipoCorriente = document.getElementById('tipoCorriente');
 		  if (tipoCorriente) tipoCorriente.value = '';
 		  document.getElementById('tipoCorrienteWrap').style.display = 'none';
+		  updateGastoInputsState();
 		}
 
         // Mostrar mensajes
@@ -1414,24 +1954,79 @@
             setTimeout(() => msg.style.display = 'none', 3000);
         }
 		
-		// ==== MODAL DE CONFIRMACIÓN DE PAGO ====
+		// Habilita/deshabilita inputs de gasto según el estado del carrito
+		function updateGastoInputsState() {
+		  const gastosEl = document.getElementById('gastos');
+		  const descEl   = document.getElementById('descripcion');
 
-		function abrirModalPago() {
-		  // Validación mínima antes de abrir el modal:
-		  const gastos = parseFloat(document.getElementById('gastos').value) || 0;
+		  if (!gastosEl || !descEl) return;
 
-		  if (carrito.length === 0 && gastos === 0) {
-			mostrarError('Agrega al menos una línea al pedido o registra un gasto.');
-			return;
+		  const disabled = (carrito && carrito.length > 0);
+
+		  // Si hay productos en carrito, limpiar y deshabilitar
+		  if (disabled) {
+			gastosEl.value = '';
+			descEl.value = '';
 		  }
 
-		  // Reset de estado del modal
-		  document.querySelector('input[name="estadoPago"][value="pagado"]').checked = true;
-		  toggleNombreCliente(false);
-		  document.getElementById('nombreClienteDeudor').value = '';
-		  document.getElementById('modalPagoError').style.display = 'none';
+		  gastosEl.disabled = disabled;
+		  descEl.disabled = disabled;
 
-		  document.getElementById('modalPagoBackdrop').style.display = 'flex';
+		  // Si el modal "Guardar Registro" está abierto, refrescar su UI
+		  // para que no muestre "Método de gasto" si está deshabilitado
+		  try { updateModalPagoUI(); } catch (e) {}
+		}
+		</script><script>
+		// Habilita/deshabilita inputs de gasto según el estado del carrito
+		function updateGastoInputsState() {
+		  const gastosEl = document.getElementById('gastos');
+		  const descEl   = document.getElementById('descripcion');
+
+		  if (!gastosEl || !descEl) return;
+
+		  const disabled = (carrito && carrito.length > 0);
+
+		  // Si hay productos en carrito, limpiar y deshabilitar
+		  if (disabled) {
+			gastosEl.value = '';
+			descEl.value = '';
+		  }
+
+		  gastosEl.disabled = disabled;
+		  descEl.disabled = disabled;
+
+		  // Si el modal "Guardar Registro" está abierto, refrescar su UI
+		  // para que no muestre "Método de gasto" si está deshabilitado
+		  try { updateModalPagoUI(); } catch (e) {}
+		}
+		
+		// ==== MODAL DE CONFIRMACIÓN DE PAGO ====
+		function abrirModalPago() {
+			const gastos = parseFloat(document.getElementById('gastos').value) || 0;
+			const hayCarrito = carrito.length > 0;
+			const hayGasto = gastos > 0;
+
+			if (!hayCarrito && !hayGasto) {
+			  mostrarError('Agrega al menos una línea al pedido o registra un gasto.');
+			  return;
+			}
+
+			// Estado por defecto:
+			// - Si hay ventas, por defecto 'pagado'
+			// - Si NO hay ventas y sí gasto, por defecto 'soloGasto'
+			const defaultEstado = hayCarrito ? 'pagado' : 'soloGasto';
+			const radio = document.querySelector(`input[name="estadoPago"][value="${defaultEstado}"]`);
+			if (radio) radio.checked = true;
+
+			// Reset campos
+			const err = document.getElementById('modalPagoError');
+			if (err) err.style.display = 'none';
+			const nombre = document.getElementById('nombreClienteDeudor');
+			if (nombre) nombre.value = '';
+
+			// Mostrar modal + ajustar visibilidad de secciones
+			document.getElementById('modalPagoBackdrop').style.display = 'flex';
+			updateModalPagoUI();
 		}
 
 		function cerrarModalPago() {
@@ -1444,21 +2039,62 @@
 		}
 
 		function confirmarGuardarDesdeModal() {
-		  const estado = document.querySelector('input[name="estadoPago"]:checked')?.value || 'pagado';
-		  const nombre = (document.getElementById('nombreClienteDeudor').value || '').trim();
-		  const errorBox = document.getElementById('modalPagoError');
+			const estado = document.querySelector('input[name="estadoPago"]:checked')?.value || 'pagado';
+			const nombre = (document.getElementById('nombreClienteDeudor')?.value || '').trim();
+			const err = document.getElementById('modalPagoError');
 
-		  if (estado === 'debe' && !nombre) {
-			errorBox.textContent = '✗ Debes ingresar el nombre del cliente que quedó debiendo.';
-			errorBox.style.display = 'block';
-			return;
-		  }
+			const gastos = parseFloat(document.getElementById('gastos').value) || 0;
+			const hayCarrito = carrito.length > 0;
+			const hayGasto = gastos > 0;
 
-		  errorBox.style.display = 'none';
-		  cerrarModalPago();
+			// Leer métodos (si visibles/corresponden)
+			let metodoVenta = null;
+			let metodoGasto = null;
 
-		  // Llamamos a guardarDatos con los parámetros seleccionados
-		  guardarDatos(estado, nombre);
+			const ventaWrapVisible = document.getElementById('metodoVentaWrap')?.style.display !== 'none';
+			if (ventaWrapVisible) {
+			  metodoVenta = document.querySelector('input[name="metodoVenta"]:checked')?.value || null;
+			}
+
+			const gastoWrapVisible = document.getElementById('metodoGastoWrap')?.style.display !== 'none';
+			if (gastoWrapVisible) {
+			  metodoGasto = document.querySelector('input[name="metodoGasto"]:checked')?.value || null;
+			}
+
+			// Validaciones rápidas en el modal
+			if (estado === 'debe' && hayCarrito && !nombre) {
+			  err.textContent = '✗ Debes ingresar el nombre del cliente que quedó debiendo.';
+			  err.style.display = 'block';
+			  return;
+			}
+			if (estado === 'pagado' && hayCarrito && !metodoVenta) {
+			  err.textContent = '✗ Selecciona el método de pago de la venta.';
+			  err.style.display = 'block';
+			  return;
+			}
+			if (hayGasto && !metodoGasto) {
+			  err.textContent = '✗ Selecciona el método de pago del gasto.';
+			  err.style.display = 'block';
+			  return;
+			}
+
+			// 🟡 Confirmación si seleccionó 'Solo gasto' pero hay productos en el carrito
+			if (estado === 'soloGasto' && hayCarrito) {
+			  const seguro = confirm('Seleccionaste "Solo gasto", pero hay productos en el carrito. Se ignorarán estas ventas y solo se registrará el gasto. ¿Deseas continuar?');
+			  if (!seguro) return;
+			}
+
+			err.style.display = 'none';
+			cerrarModalPago();
+
+			// Guardar con los parámetros finales
+			guardarDatos({
+			  estadoPago: estado,
+			  nombreCliente: nombre || null,
+			  metodoVenta,
+			  metodoGasto,
+			  soloGasto: (estado === 'soloGasto')
+			});
 		}
 		
         // Exportar datos
@@ -1550,9 +2186,60 @@
 		  if (ev && ev.target) ev.target.classList.add('active');
 
 		  // Cargar datos al entrar a cada pestaña
-		  if (tabName === 'resumen') await actualizarResumen();
+		  if (tabName === 'resumen') {
+			await actualizarResumen();
+			await actualizarCuentasPorCobrar();
+		  }
 		  if (tabName === 'acumulado') await actualizarAcumulado();
 		  if (tabName === 'metodos') await actualizarAnalisisPagos();
+		}
+		
+		// ===== Cobrar ventas en "Debe" =====
+		let ventaACobrarId = null;
+
+		function abrirModalCobrar(id) {
+			ventaACobrarId = id;
+			document.getElementById('modalCobrarError').style.display = 'none';
+			// Default: Efectivo
+			const ef = document.getElementById('cobroEfectivo');
+			if (ef) ef.checked = true;
+			document.getElementById('modalCobrarBackdrop').style.display = 'flex';
+		}
+
+		function cerrarModalCobrar() {
+			document.getElementById('modalCobrarBackdrop').style.display = 'none';
+			ventaACobrarId = null;
+		}
+
+		async function confirmarCobro() {
+			const err = document.getElementById('modalCobrarError');
+			try {
+			if (!ventaACobrarId) {
+				err.textContent = '✗ No se encontró la venta a cobrar.';
+				err.style.display = 'block';
+				return;
+			}
+			const metodoSel = document.querySelector('input[name="metodoCobro"]:checked')?.value || 'Efectivo';
+
+			await updateDoc(doc(db, "registros", ventaACobrarId), {
+				estadoPago: 'Pagado',
+				metodo: metodoSel
+			});
+
+			cerrarModalCobrar();
+			mostrarExito();
+
+			// Refrescar tableros (por si estás en cualquiera)
+			try { await actualizarResumen(); } catch(e) {}
+			try { await actualizarAnalisisPagos(); } catch(e) {}
+			try { await actualizarAcumulado(); } catch(e) {}
+			try { await actualizarCuentasPorCobrar(); } catch(e) {}
+
+			} catch (e) {
+			console.error(e);
+			err.textContent = '✗ Error registrando el cobro.';
+			err.style.display = 'block';
+			}
 		}
     </script>
 	<script type="module">
@@ -1571,7 +2258,9 @@
 		addDoc, 
 		getDocs, 
 		query, 
-		where 
+		where,
+		doc,
+		updateDoc 
 	  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 	  const firebaseConfig = {
@@ -1595,6 +2284,8 @@
 	  window.getDocs = getDocs;
 	  window.query = query;
 	  window.where = where;
+	  window.doc = doc;
+	  window.updateDoc = updateDoc;
 
 	  // 🔐 VALIDAR SESIÓN
  	  onAuthStateChanged(auth, (user) => {
