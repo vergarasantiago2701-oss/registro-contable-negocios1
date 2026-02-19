@@ -112,7 +112,14 @@
         })
         .catch(error => alert(error.message));
     }
+
+    document.getElementById("password").addEventListener("keydown", function(e) {
+      if (e.key === "Enter") {
+        login();
+      }
+    });
   </script>
 
 </body>
 </html>
+
