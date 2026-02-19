@@ -601,7 +601,7 @@
             
             <div class="business-section">
                 <h4>Información del Sistema</h4>
-                <p><strong>Versión:</strong> 1.4</p>
+                <p><strong>Versión:</strong> 1.5</p>
                 <p><strong>Negocios Registrados:</strong> 4</p>
                 <p><strong>Datos Almacenados:</strong> <span id="totalRegistros">0</span> registros</p>
             </div>
@@ -987,13 +987,22 @@
 
 			return datos;
 		}
+		
+		// === Helper: fecha local en formato YYYY-MM-DD (sin UTC) ===
+		function hoyLocalISO() {
+		  const d = new Date();
+		  const y = d.getFullYear();
+		  const m = String(d.getMonth() + 1).padStart(2, '0');
+		  const day = String(d.getDate()).padStart(2, '0');
+		  return `${y}-${m}-${day}`;
+		}
 
         // Establecer fecha actual
         function setFechaActual() {
-            const hoy = new Date().toISOString().split('T')[0];
-            document.getElementById('fecha').value = hoy;
-            document.getElementById('fechaFiltro').value = hoy;
-        }
+		  const hoy = hoyLocalISO();
+		  document.getElementById('fecha').value = hoy;
+		  document.getElementById('fechaFiltro').value = hoy;
+		}
 
         // Actualizar estado del campo base (ingresos)
         async function actualizarEstadoBase() {
@@ -1594,7 +1603,7 @@
 				await addDoc(collection(db, "registros"), {
 				  tipo: "movimiento",
 				  negocio: r.negocio,               // mismo negocio del ítem original
-				  fecha: new Date().toISOString().split('T')[0], // hoy
+				  fecha: hoyLocalISO(), // hoy (hora local)
 				  producto: null,                   // es un abono, no un ítem vendido
 				  cantidad: null,
 				  precioUnitario: null,
@@ -1727,7 +1736,7 @@
 			if (filtroFecha === 'fecha') {
 			fechaPagosContainer.style.display = 'block';
 			if (!document.getElementById('fechaSeleccionadaPagos').value) {
-				document.getElementById('fechaSeleccionadaPagos').value = new Date().toISOString().split('T')[0];
+				document.getElementById('fechaSeleccionadaPagos').value = hoyLocalISO();
 			}
 			} else {
 			fechaPagosContainer.style.display = 'none';
@@ -2113,7 +2122,7 @@
 			
 			const link = document.createElement('a');
 			link.href = dataStr;
-			link.download = 'contabilidad_' + new Date().toISOString().split('T')[0] + '.json';
+			link.download = 'contabilidad_' + hoyLocalISO() + '.json';
 			link.click();
 		}
 
@@ -2136,7 +2145,7 @@
 		  }
 		  const link = document.createElement('a');
 		  link.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-		  link.download = 'contabilidad_' + new Date().toISOString().split('T')[0] + '.csv';
+		  link.download = 'contabilidad_' + hoyLocalISO() + '.csv';
 		  link.click();
 		}
 
