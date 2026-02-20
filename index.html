@@ -621,7 +621,7 @@
             <div class="business-section">
               <h4>Catálogo de productos por negocio</h4>
               <p style="color:#666;margin:8px 0 14px;">
-                Agrega productos personalizados (se suman al catálogo base del negocio). Se guardan en tu equipo.
+                Agrega productos personalizados (se suman al catálogo base del negocio). Se guardan en la nube.
               </p>
 
               <div class="form-group">
@@ -953,28 +953,34 @@
 
         // Agrega producto al negocio desde Configuración
         function cfgAgregarProducto() {
-          const negocioKey = document.getElementById('cfgNegocio').value;
-          const nombre = (document.getElementById('cfgNombreProd').value || '').trim();
-          const precio = parseInt(document.getElementById('cfgPrecioProd').value, 10) || 0;
+			const negocioKey = document.getElementById('cfgNegocio').value;
+			const nombre = (document.getElementById('cfgNombreProd').value || '').trim();
+			const precio = parseInt(document.getElementById('cfgPrecioProd').value, 10) || 0;
 
-          if (!nombre) { mostrarError('Escribe el nombre del producto.'); return; }
-          if (precio <= 0) { mostrarError('Escribe un precio válido mayor a 0.'); return; }
+			if (!nombre) { mostrarError('Escribe el nombre del producto.'); return; }
+			if (precio <= 0) { mostrarError('Escribe un precio válido mayor a 0.'); return; }
 
-          const all = loadCatalogos();
-          const arr = Array.isArray(all[negocioKey]) ? all[negocioKey] : [];
-          arr.push({ nombre, precio });
-          all[negocioKey] = arr;
-          saveCatalogos(all);
+			dbAgregarProducto(negocioKey, nombre, precio)
+				.then(async () => {
+				// Limpiar inputs
+				document.getElementById('cfgNombreProd').value = '';
+				document.getElementById('cfgPrecioProd').value = '';
 
-          // Limpiar inputs
-          document.getElementById('cfgNombreProd').value = '';
-          document.getElementById('cfgPrecioProd').value = '';
-
-          // Si estoy en ese negocio en "Entrada de Datos", refrescar selector
-          try { if (document.getElementById('business').value === negocioKey) cargarProductos(); } catch (e) {}
-          renderCatalogoUI();
-          mostrarExito();
-        }
+				// Si estoy en ese negocio en "Entrada de Datos", refrescar selector
+				try {
+					if (document.getElementById('business').value === negocioKey) {
+					await fetchPersonalizadosDB(negocioKey); // refresca cache
+					await cargarProductos();
+					}
+				} catch (e) {}
+				renderCatalogoUI();
+				mostrarExito();
+				})
+				.catch(e => {
+				console.error(e);
+				mostrarError('No se pudo guardar el producto en la nube.');
+			});
+		}
 
 		function abrirModalCredenciales() {
 			const err = document.getElementById('credError');
@@ -1085,43 +1091,34 @@
 		});
 
 		async function __eliminarProductoPersonalizadoConfirmado() {
-			if (__pendingDeleteIdx == null || !__pendingDeleteNegocioKey) return;
-
-			const all = loadCatalogos();
-			const arr = Array.isArray(all[__pendingDeleteNegocioKey]) ? all[__pendingDeleteNegocioKey] : [];
-			const idx = __pendingDeleteIdx;
-
-			if (idx >= 0 && idx < arr.length) {
-				arr.splice(idx, 1);
-				all[__pendingDeleteNegocioKey] = arr;
-				saveCatalogos(all);
-			}
-
+			if (!__pendingDeleteDocId || !__pendingDeleteNegocioKey) return;
+			
+			await dbEliminarProducto(__pendingDeleteDocId, __pendingDeleteNegocioKey);
 			// Guardamos para usarlo luego de refrescar UI
 			const negocioKeyUsado = __pendingDeleteNegocioKey;
 
 			// Limpiar estado
-			__pendingDeleteIdx = null;
+			__pendingDeleteDocId = null;
 			__pendingDeleteNegocioKey = null;
 
 			// Refrescar UI (configuración y, si aplica, selector en Entrada)
 			renderCatalogoUI();
 			try {
 				if (document.getElementById('business').value === negocioKeyUsado) {
-				cargarProductos();
+				await cargarProductos();
 				}
 			} catch (e) {}
 		}
 
         // Estado temporal a nivel de archivo para saber qué borrar tras verificar
-		let __pendingDeleteIdx = null;
+		let __pendingDeleteDocId = null;
 		let __pendingDeleteNegocioKey = null;
 
-		function cfgEliminarProducto(idx) {
+		function cfgEliminarProducto(docId) {
 			const negocioKey = document.getElementById('cfgNegocio').value;
 
 			// Guardar intención de borrado
-			__pendingDeleteIdx = idx;
+			__pendingDeleteDocId = docId;
 			__pendingDeleteNegocioKey = negocioKey;
 
 			// Abrir modal para pedir contraseña
@@ -1129,147 +1126,264 @@
 		}
 
         // Renderiza la tabla de productos personalizados del negocio seleccionado
-        function renderCatalogoUI() {
-          const wrap = document.getElementById('cfgTablaWrap');
-          if (!wrap) return;
+        async function renderCatalogoUI() {
+			const wrap = document.getElementById('cfgTablaWrap');
+			if (!wrap) return;
 
-          const negocioKey = document.getElementById('cfgNegocio')?.value || 'Negocio1';
-          const personalizados = getCatalogoPersonalizado(negocioKey);
+			const negocioKey = document.getElementById('cfgNegocio')?.value || 'Negocio1';
+			// Lee de DB y actualiza cache
+			const personalizados = await fetchPersonalizadosDB(negocioKey);
 
-          if (!personalizados.length) {
-            wrap.innerHTML = '<p style="color:#999;">Este negocio no tiene productos personalizados.</p>';
-            return;
-          }
+			if (!personalizados.length) {
+				wrap.innerHTML = '<p style="color:#999;">Este negocio no tiene productos personalizados.</p>';
+				return;
+			}
 
-          let rows = '';
-          personalizados.forEach((p, idx) => {
-            rows += `
-              <tr>
-                <td>${p.nombre}</td>
-                <td style="text-align:right;">${COP(p.precio)}</td>
-                <td style="text-align:center;">
-                  <button class="btn-danger" type="button" onclick="cfgEliminarProducto(${idx})">Eliminar</button>
-                </td>
-              </tr>
-            `;
-          });
+			let rows = '';
+			personalizados.forEach((p) => {
+				rows += `
+				<tr>
+					<td>${p.nombre}</td>
+					<td style="text-align:right;">${COP(p.precio)}</td>
+					<td style="text-align:center;">
+					<button class="btn-danger" type="button" onclick="cfgEliminarProducto('${p.id}')">Eliminar</button>
+					</td>
+				</tr>
+				`;
+			});
 
-          wrap.innerHTML = `
-            <table>
-              <thead>
-                <tr>
-                  <th>Producto (personalizado)</th>
-                  <th style="width:180px;">Precio</th>
-                  <th style="width:140px;">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>${rows}</tbody>
-            </table>
-          `;
-        }		
+			wrap.innerHTML = `
+				<table>
+				<thead>
+					<tr>
+					<th>Producto (personalizado)</th>
+					<th style="width:180px;">Precio</th>
+					<th style="width:140px;">Acciones</th>
+					</tr>
+				</thead>
+				<tbody>${rows}</tbody>
+				</table>
+			`;
+		}
+				
+		// ======= 🔗 Helpers para DB de Catálogos Personalizados =======
 
-		// ====== CARGAR PRODUCTOS AUTOMÁTICAMENTE ======
-        function cargarProductos() {
-          const negocio = document.getElementById("business").value;
-          const select = document.getElementById("productoSelect");
-          const precioWrap = document.getElementById("precioPersonalizadoWrap");
-          const precioInput = document.getElementById("precioPersonalizado");
+		// Cache en memoria para evitar consultas repetidas
+		const __catalogoCache = {}; // { NegocioX: [{id, negocioKey, nombre, precio, ownerUid, createdAt}, ...] }
+		let catalogoActual = [];    // Combinado (base + personalizados) del negocio actualmente seleccionado
 
-          select.innerHTML = "";
+		// Espera a que haya usuario autenticado (necesario para guardar por ownerUid)
+		async function waitForAuthUser() {
+			while (!(window.auth && window.auth.currentUser)) {
+			await new Promise(r => setTimeout(r, 50));
+			}
+		}
 
-          // Catalogo combinado (base + personalizados)
-          const catalogo = getCatalogoCombinado(negocio);
+		// Lee productos personalizados desde Firestore por negocio actual y usuario
+		async function fetchPersonalizadosDB(negocioKey) {
+			try {
+			await waitForAuthUser();
+			const uid = window.auth.currentUser?.uid;
+			if (!uid) return [];
 
-          // Negocio sin catálogo -> Venta Manual
-          if (!catalogo || catalogo.length === 0) {
-            const opt = document.createElement("option");
-            opt.value = "manual";
-            opt.textContent = "Venta Manual";
-            select.appendChild(opt);
-            document.getElementById("totalVentaPreview").textContent = "$0";
-            precioWrap.style.display = "none";
-            precioInput.value = "";
-            return;
-          }
+			// query(collection(db,'catalogos'), where('ownerUid','==',uid), where('negocioKey','==',negocioKey))
+			const q = window.query(
+				window.collection(window.db, 'catalogos'),
+				window.where('ownerUid', '==', uid),
+				window.where('negocioKey', '==', negocioKey)
+			);
 
-          // Llenar catálogo
-          catalogo.forEach((p, index) => {
-            const option = document.createElement("option");
-            option.value = index; // índice dentro del combinado
-            option.textContent = `${p.nombre} - $${p.precio}`;
-            select.appendChild(option);
-          });
+			const snap = await window.getDocs(q);
+			const items = [];
+			snap.forEach(d => items.push({ id: d.id, ...d.data() }));
 
-          // Mostrar/ocultar extras según producto
-          const idx = parseInt(select.value, 10);
-          const prod = catalogo[idx];
+			// Cache en memoria
+			__catalogoCache[negocioKey] = items;
+			return items;
+			} catch (e) {
+			console.warn('No se pudo leer catálogo personalizado desde DB. Uso fallback vacío.', e);
+			return [];
+			}
+		}
 
-          // Mojarra (solo Negocio2)
-          if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("mojarra")) {
-            precioWrap.style.display = "block";
-          } else {
-            precioWrap.style.display = "none";
-            precioInput.value = "";
-          }
+		// Devuelve el catálogo COMBINADO (base + personalizados desde DB)
+		async function getCatalogoCombinadoAsync(negocioKey) {
+			const base = Array.isArray(productos[negocioKey]) ? productos[negocioKey] : [];
+			const personalizados = Array.isArray(__catalogoCache[negocioKey])
+			? __catalogoCache[negocioKey]
+			: await fetchPersonalizadosDB(negocioKey);
 
-          // Tipo de corriente (solo Negocio2)
-          const tipoCorrienteWrap = document.getElementById("tipoCorrienteWrap");
-          const tipoCorrienteInput = document.getElementById("tipoCorriente");
-          if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("corriente")) {
-            tipoCorrienteWrap.style.display = "block";
-          } else {
-            tipoCorrienteWrap.style.display = "none";
-            if (tipoCorrienteInput) tipoCorrienteInput.value = "";
-          }
+			// Combina: mapeamos los personalizados al mismo shape {nombre, precio}
+			const personalizadosMapeados = personalizados.map(p => ({ nombre: p.nombre, precio: Number(p.precio) || 0 }));
+			return [...base, ...personalizadosMapeados];
+		}
 
-          calcularTotalVenta();
-        }
+		// Crea un producto personalizado en Firestore
+		async function dbAgregarProducto(negocioKey, nombre, precio) {
+			await waitForAuthUser();
+			const uid = window.auth.currentUser?.uid;
+			if (!uid) throw new Error('No hay usuario autenticado');
 
-		// ====== CALCULAR TOTAL (incluye precio personalizado para Mojarra y Tipo de corriente) ======
+			await window.addDoc(window.collection(window.db, 'catalogos'), {
+			ownerUid: uid,
+			negocioKey,
+			nombre,
+			precio: Number(precio) || 0,
+			createdAt: new Date()
+			});
+
+			// Invalida/actualiza cache
+			await fetchPersonalizadosDB(negocioKey);
+		}
+
+		// Elimina un producto personalizado de Firestore (por docId)
+		async function dbEliminarProducto(docId, negocioKey) {
+			await window.deleteDoc(window.doc(window.db, 'catalogos', docId));
+			// Refrescar cache
+			await fetchPersonalizadosDB(negocioKey);
+		}
+
+		// Migración 1 sola vez: si NO hay docs en la DB para el usuario, sube los que existan en localStorage
+		async function migrarCatalogosLocalesALaDB() {
+			try {
+			await waitForAuthUser();
+			const uid = window.auth.currentUser?.uid;
+			if (!uid) return;
+
+			// ¿El usuario ya tiene catálogo en la nube?
+			const q = window.query(
+				window.collection(window.db, 'catalogos'),
+				window.where('ownerUid', '==', uid)
+			);
+			const snap = await window.getDocs(q);
+			if (!snap.empty) return; // Ya hay data, no migrar
+
+			const all = loadCatalogos(); // {Negocio1: [{nombre,precio}, ...], ...}
+			const ops = [];
+			for (const [negocioKey, arr] of Object.entries(all)) {
+				(arr || []).forEach(p => {
+				ops.push(
+					window.addDoc(window.collection(window.db, 'catalogos'), {
+					ownerUid: uid,
+					negocioKey,
+					nombre: p.nombre,
+					precio: Number(p.precio) || 0,
+					createdAt: new Date()
+					})
+				);
+				});
+			}
+			if (ops.length > 0) {
+				await Promise.all(ops);
+				// limpia local ya que migramos
+				localStorage.removeItem(CATALOGOS_KEY);
+				console.log('Catálogo personalizado migrado a Firestore.');
+			}
+			} catch (e) {
+			console.warn('Fallo migración de catálogo local a DB (se intentará más tarde):', e);
+			}
+		}
+
+		// ====== CARGAR PRODUCTOS AUTOMÁTICAMENTE (desde DB) ======
+		async function cargarProductos() {
+			const negocio = document.getElementById("business").value;
+			const select = document.getElementById("productoSelect");
+			const precioWrap = document.getElementById("precioPersonalizadoWrap");
+			const precioInput = document.getElementById("precioPersonalizado");
+
+			select.innerHTML = "";
+
+			// ⬇️ ahora viene de Firestore + base:
+			catalogoActual = await getCatalogoCombinadoAsync(negocio);
+
+			if (!catalogoActual || catalogoActual.length === 0) {
+			const opt = document.createElement("option");
+			opt.value = "manual";
+			opt.textContent = "Venta Manual";
+			select.appendChild(opt);
+			document.getElementById("totalVentaPreview").textContent = "$0";
+			precioWrap.style.display = "none";
+			precioInput.value = "";
+			return;
+			}
+
+			catalogoActual.forEach((p, index) => {
+			const option = document.createElement("option");
+			option.value = index; // índice dentro del combinado
+			option.textContent = `${p.nombre} - $${p.precio}`;
+			select.appendChild(option);
+			});
+
+			// Mostrar/ocultar extras según producto
+			const idx = parseInt(select.value, 10);
+			const prod = catalogoActual[idx];
+
+			// Mojarra (solo Negocio2)
+			if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("mojarra")) {
+			precioWrap.style.display = "block";
+			} else {
+			precioWrap.style.display = "none";
+			precioInput.value = "";
+			}
+
+			// Tipo de corriente (solo Negocio2)
+			const tipoCorrienteWrap = document.getElementById("tipoCorrienteWrap");
+			const tipoCorrienteInput = document.getElementById("tipoCorriente");
+			if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("corriente")) {
+			tipoCorrienteWrap.style.display = "block";
+			} else {
+			tipoCorrienteWrap.style.display = "none";
+			if (tipoCorrienteInput) tipoCorrienteInput.value = "";
+			}
+
+			calcularTotalVenta();
+		}
+
+		// ====== CALCULAR TOTAL (incluye precio personalizado para Mojarra y Tipo de corriente - usando catalogoActual) ======
         function calcularTotalVenta() {
-          const negocio = document.getElementById("business").value;
-          const select = document.getElementById("productoSelect");
-          const index = select.value;
-          const cantidad = parseInt(document.getElementById("cantidad").value, 10) || 0;
+			const negocio = document.getElementById("business").value;
+			const select = document.getElementById("productoSelect");
+			const index = select.value;
+			const cantidad = parseInt(document.getElementById("cantidad").value, 10) || 0;
 
-          const precioWrap = document.getElementById("precioPersonalizadoWrap");
-          const precioInput = document.getElementById("precioPersonalizado");
+			const precioWrap = document.getElementById("precioPersonalizadoWrap");
+			const precioInput = document.getElementById("precioPersonalizado");
 
-          const catalogo = getCatalogoCombinado(negocio);
+			const catalogo = catalogoActual; // ya cargado
 
-          if (index === 'manual' || !catalogo || !catalogo[index]) {
-            document.getElementById("totalVentaPreview").textContent = "$0";
-            return;
-          }
+			if (index === 'manual' || !catalogo || !catalogo[index]) {
+			document.getElementById("totalVentaPreview").textContent = "$0";
+			return;
+			}
 
-          const prod = catalogo[index];
-          let precioUnitario = prod.precio || 0;
+			const prod = catalogo[index];
+			let precioUnitario = prod.precio || 0;
 
-          // Mojarra personalizada (> 25.000) solo Negocio2
-          if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("mojarra")) {
-            precioWrap.style.display = "block";
-            const personalizado = parseInt(precioInput.value, 10);
-            if (!isNaN(personalizado) && personalizado > 25000) {
-              precioUnitario = personalizado;
-            }
-          } else {
-            precioWrap.style.display = "none";
-            if (precioInput) precioInput.value = "";
-          }
+			// Mojarra personalizada (> 25.000) solo Negocio2
+			if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("mojarra")) {
+			precioWrap.style.display = "block";
+			const personalizado = parseInt(precioInput.value, 10);
+			if (!isNaN(personalizado) && personalizado > 25000) {
+				precioUnitario = personalizado;
+			}
+			} else {
+			precioWrap.style.display = "none";
+			if (precioInput) precioInput.value = "";
+			}
 
-          // Tipo de corriente (solo Negocio2)
-          const tipoCorrienteWrap = document.getElementById("tipoCorrienteWrap");
-          const tipoCorrienteInput = document.getElementById("tipoCorriente");
-          if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("corriente")) {
-            tipoCorrienteWrap.style.display = "block";
-          } else {
-            tipoCorrienteWrap.style.display = "none";
-            if (tipoCorrienteInput) tipoCorrienteInput.value = "";
-          }
+			// Tipo de corriente (solo Negocio2)
+			const tipoCorrienteWrap = document.getElementById("tipoCorrienteWrap");
+			const tipoCorrienteInput = document.getElementById("tipoCorriente");
+			if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("corriente")) {
+			tipoCorrienteWrap.style.display = "block";
+			} else {
+			tipoCorrienteWrap.style.display = "none";
+			if (tipoCorrienteInput) tipoCorrienteInput.value = "";
+			}
 
-          const total = precioUnitario * (cantidad || 1);
-          document.getElementById("totalVentaPreview").textContent = COP(total);
-        }
+			const total = precioUnitario * (cantidad || 1);
+			document.getElementById("totalVentaPreview").textContent = COP(total);
+		}
 
         // Inicializar localStorage
         function inicializarSistema() {
@@ -1498,7 +1612,7 @@
           const index = document.getElementById("productoSelect").value;
           const cantidad = parseInt(document.getElementById("cantidad").value, 10) || 0;
 
-          const catalogo = getCatalogoCombinado(negocio);
+          const catalogo = catalogoActual; // ← ya cargado desde Firestore + base
 
           if (!catalogo || index === 'manual' || !catalogo[index]) {
             mostrarError('Selecciona un producto del catálogo para agregar al pedido.');
@@ -2500,7 +2614,11 @@
 		// Inicializa SOLO cuando Firebase globals estén listas
 		window.addEventListener('DOMContentLoaded', async () => {
 			try {
-			await waitForFirebaseReady();
+				await waitForFirebaseReady();
+				// Espera usuario autenticado (el módulo redirige si no hay sesión)
+				await waitForAuthUser();
+				// Migrar catálogo local -> DB si aplica (una sola vez)
+				await migrarCatalogosLocalesALaDB();
 			} catch (e) {
 			console.error('Firebase no se inicializó a tiempo:', e);
 			} finally {
@@ -2602,7 +2720,8 @@
 		query, 
 		where,
 		doc,
-		updateDoc 
+		updateDoc,
+		deleteDoc
 	  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 	  const firebaseConfig = {
@@ -2628,6 +2747,7 @@
 	  window.where = where;
 	  window.doc = doc;
 	  window.updateDoc = updateDoc;
+	  window.deleteDoc = deleteDoc;
 
 	  // Hacer accesible la sesión y métodos de auth a scripts no-módulo
 	  window.auth = auth;
