@@ -24,7 +24,7 @@
             background: white;
             border-radius: 10px;
             box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-            overflow: hidden;
+            overflow-x: auto;   /* permite scroll horizontal */
         }
         
         .header {
@@ -381,6 +381,16 @@
 			animation: shake 0.3s ease-in-out;
 			border-color: #dc3545 !important; /* rojo de error */
 		}
+		table {
+			width: 100%;
+			border-collapse: collapse;
+		}
+
+		th, td {
+			padding: 10px;
+			text-align: left;
+			white-space: nowrap;
+		}
     </style>
 </head>
 <body>
@@ -612,7 +622,7 @@
             
             <div class="business-section">
                 <h4>Información del Sistema</h4>
-                <p><strong>Versión:</strong> 1.7</p>
+                <p><strong>Versión:</strong> 1.8</p>
                 <p><strong>Negocios Registrados:</strong> 4</p>
                 <p><strong>Datos Almacenados:</strong> <span id="totalRegistros">0</span> registros</p>
             </div>
