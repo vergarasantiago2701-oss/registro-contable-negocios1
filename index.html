@@ -364,7 +364,7 @@
 		.modal-radio{ display: grid; gap: 10px; margin-top: 10px; }
 		.radio-item{ display: flex; gap: 10px; align-items: center; cursor: pointer; }
 		
-		//inputs deshabilitados
+		/*inputs deshabilitados*/
 		input:disabled {
 		  background-color: #f5f5f5;
 		  color: #999;
@@ -601,10 +601,47 @@
             
             <div class="business-section">
                 <h4>Información del Sistema</h4>
-                <p><strong>Versión:</strong> 1.5</p>
+                <p><strong>Versión:</strong> 1.6</p>
                 <p><strong>Negocios Registrados:</strong> 4</p>
                 <p><strong>Datos Almacenados:</strong> <span id="totalRegistros">0</span> registros</p>
             </div>
+
+            <!-- === Catálogo de productos (Config) === -->
+            <div class="business-section">
+              <h4>Catálogo de productos por negocio</h4>
+              <p style="color:#666;margin:8px 0 14px;">
+                Agrega productos personalizados (se suman al catálogo base del negocio). Se guardan en tu equipo.
+              </p>
+
+              <div class="form-group">
+                <div class="input-field">
+                  <label for="cfgNegocio">Negocio:</label>
+                  <select id="cfgNegocio" onchange="renderCatalogoUI()">
+                    <option value="Negocio1">Negocio Fritos</option>
+                    <option value="Negocio2">Negocio Almuerzos</option>
+                    <option value="Negocio3">Negocio Licorería</option>
+                    <option value="Negocio4">Negocio Comidas Rápidas</option>
+                  </select>
+                </div>
+
+                <div class="input-field">
+                  <label for="cfgNombreProd">Nombre del producto:</label>
+                  <input id="cfgNombreProd" type="text" placeholder="Ej: Perro hawaiano">
+                </div>
+                <div class="input-field">
+                  <label for="cfgPrecioProd">Precio (COP):</label>
+                  <input id="cfgPrecioProd" type="number" min="1" step="1" placeholder="Ej: 12000">
+                </div>
+              </div>
+
+              <div class="button-group" style="justify-content:flex-start;">
+                <button class="btn-success" type="button" onclick="cfgAgregarProducto()">➕ Agregar producto</button>
+              </div>
+
+              <div id="cfgTablaWrap" style="margin-top:14px;">
+                <!-- Aquí se renderiza la tabla del catálogo del negocio seleccionado -->
+              </div>
+            </div>			
         </div>
     </div>
 	<!-- MODAL Confirmación de pago -->
@@ -722,60 +759,94 @@
 			</div>
 	  </div>
 	</div>
-	<!-- MODAL Cobro por Cliente (CxC) -->
-	<div id="modalCobroClienteBackdrop" class="modal-backdrop" style="display:none;">
-	  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalCobroClienteTitulo">
-		<div class="modal-header">
-		  <h3 id="modalCobroClienteTitulo">Cobrar cuenta</h3>
-		  <button class="modal-close" onclick="cerrarModalCobroCliente()" aria-label="Cerrar">✖</button>
+
+    <!-- MODAL: Cobro por Cliente (CxC) -->
+    <div id="modalCobroClienteBackdrop" class="modal-backdrop" style="display:none;">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalCobroClienteTitulo">
+        <div class="modal-header">
+          <h3 id="modalCobroClienteTitulo">Cobrar cuenta</h3>
+          <button class="modal-close" onclick="cerrarModalCobroCliente()" aria-label="Cerrar">✖</button>
+        </div>
+
+        <div class="modal-body">
+          <p><strong>Cliente:</strong> <span id="cxcClienteNombre"></span></p>
+          <p><strong>Total por cobrar:</strong> <span id="cxcClienteDeuda">$0</span></p>
+          <hr>
+
+          <div class="modal-radio">
+            <label class="radio-item">
+              <input type="radio" name="tipoCobroCliente" value="total" checked onclick="toggleMontoParcial(false)">
+              <span>Pago total</span>
+            </label>
+            <label class="radio-item">
+              <input type="radio" name="tipoCobroCliente" value="parcial" onclick="toggleMontoParcial(true)">
+              <span>Pago parcial</span>
+            </label>
+          </div>
+
+          <div id="montoParcialWrap" class="input-field" style="display:none; margin-top:10px;">
+            <label for="montoParcial">Monto a cobrar (COP):</label>
+            <input type="number" id="montoParcial" min="1" step="1" placeholder="Ej: 20000">
+            <small style="color:#666;">No puede exceder el total por cobrar.</small>
+          </div>
+
+          <div class="payment-options" style="margin-top:12px;">
+            <label class="payment-radio">
+              <input type="radio" name="metodoCobroCliente" value="Efectivo" checked>
+              <div class="radio-content">
+                <span class="icon">💵</span><span class="text">Efectivo</span>
+              </div>
+            </label>
+
+            <label class="payment-radio">
+              <input type="radio" name="metodoCobroCliente" value="Nequi">
+              <div class="radio-content">
+                <span class="icon">📱</span><span class="text">Nequi</span>
+              </div>
+            </label>
+          </div>
+
+          <div id="modalCobroClienteError" class="error-message" style="display:none;"></div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="cerrarModalCobroCliente()">Cancelar</button>
+          <button class="btn-primary" onclick="confirmarCobroCliente()">Confirmar cobro</button>
+        </div>
+      </div>
+    </div>
+	
+	<!-- MODAL Verificación de credenciales para eliminar producto personalizado -->
+	<div id="modalCredencialesBackdrop" class="modal-backdrop" style="display:none;">
+		<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalCredencialesTitulo">
+			<div class="modal-header">
+				<h3 id="modalCredencialesTitulo">Confirmar con contraseña</h3>
+				<button class="modal-close" onclick="cerrarModalCredenciales()" aria-label="Cerrar">✖</button>
+			</div>
+			<div class="modal-body">
+				<p style="color:#555;margin-bottom:12px;">
+					Por seguridad, ingresa tu contraseña para eliminar este producto.
+				</p>
+
+				<!-- Si quieres pedir también correo, descomenta:
+				<div class="input-field" style="margin-bottom:10px;">
+					<label for="credEmail">Correo:</label>
+					<input type="email" id="credEmail" placeholder="tu@correo.com">
+				</div>
+				-->
+
+				<div class="input-field">
+					<label for="credPassword">Contraseña:</label>
+					<input type="password" id="credPassword" placeholder="********">
+				</div>
+
+				<div id="credError" class="error-message" style="display:none;"></div>
+			</div>
+			<div class="modal-footer">
+				<button class="btn-secondary" onclick="cerrarModalCredenciales()">Cancelar</button>
+				<button class="btn-primary" onclick="confirmarCredenciales()">Confirmar</button>
+			</div>
 		</div>
-
-		<div class="modal-body">
-		  <p><strong>Cliente:</strong> <span id="cxcClienteNombre"></span></p>
-		  <p><strong>Total por cobrar:</strong> <span id="cxcClienteDeuda">$0</span></p>
-		  <hr>
-
-		  <div class="modal-radio">
-			<label class="radio-item">
-			  <input type="radio" name="tipoCobroCliente" value="total" checked onclick="toggleMontoParcial(false)">
-			  <span>Pago total</span>
-			</label>
-			<label class="radio-item">
-			  <input type="radio" name="tipoCobroCliente" value="parcial" onclick="toggleMontoParcial(true)">
-			  <span>Pago parcial</span>
-			</label>
-		  </div>
-
-		  <div id="montoParcialWrap" class="input-field" style="display:none; margin-top:10px;">
-			<label for="montoParcial">Monto a cobrar (COP):</label>
-			<input type="number" id="montoParcial" min="1" step="1" placeholder="Ej: 20000">
-			<small style="color:#666;">No puede exceder el total por cobrar.</small>
-		  </div>
-
-		  <div class="payment-options" style="margin-top:12px;">
-			<label class="payment-radio">
-			  <input type="radio" name="metodoCobroCliente" value="Efectivo" checked>
-			  <div class="radio-content">
-				<span class="icon">💵</span><span class="text">Efectivo</span>
-			  </div>
-			</label>
-
-			<label class="payment-radio">
-			  <input type="radio" name="metodoCobroCliente" value="Nequi">
-			  <div class="radio-content">
-				<span class="icon">📱</span><span class="text">Nequi</span>
-			  </div>
-			</label>
-		  </div>
-
-		  <div id="modalCobroClienteError" class="error-message" style="display:none;"></div>
-		</div>
-
-		<div class="modal-footer">
-		  <button class="btn-secondary" onclick="cerrarModalCobroCliente()">Cancelar</button>
-		  <button class="btn-primary" onclick="confirmarCobroCliente()">Confirmar cobro</button>
-		</div>
-	  </div>
 	</div>
     <script>
 	
@@ -806,7 +877,6 @@
 			{ nombre: "Papa pollo", precio: 2000 },
 			{ nombre: "Empanada carne", precio: 2000 },
 			{ nombre: "Empanada pollo", precio: 2000 },
-			{ nombre: "Empanada queso", precio: 2000 },
 			{ nombre: "Caribañolas", precio: 2000 }
 		  ],
 
@@ -838,104 +908,306 @@
 		  maximumFractionDigits: 0
 		}).format(Number(n) || 0);
 
+        /* =========================
+          Catálogos personalizados
+          ========================= */
+
+        // Clave de almacenamiento local
+        const CATALOGOS_KEY = 'catalogos';
+
+        // Carga el objeto completo { Negocio1: [...], Negocio2: [...], ... }
+        function loadCatalogos() {
+          try { return JSON.parse(localStorage.getItem(CATALOGOS_KEY) || '{}'); }
+          catch { return {}; }
+        }
+
+        // Guarda el objeto completo
+        function saveCatalogos(obj) {
+          localStorage.setItem(CATALOGOS_KEY, JSON.stringify(obj));
+        }
+
+        // Obtiene el array del negocio (si no existe, []), solo personalizados
+        function getCatalogoPersonalizado(negocioKey) {
+          const all = loadCatalogos();
+          return Array.isArray(all[negocioKey]) ? all[negocioKey] : [];
+        }
+
+        // Reemplaza la lista combinada que se usa para vender: BASE + PERSONALIZADOS
+        function getCatalogoCombinado(negocioKey) {
+          const base = Array.isArray(productos[negocioKey]) ? productos[negocioKey] : [];
+          const custom = getCatalogoPersonalizado(negocioKey);
+          // Concatenamos ambos catálogos (si quieres deduplicar por nombre, te lo dejo luego)
+          return [...base, ...custom];
+        }
+
+        // Agrega producto al negocio desde Configuración
+        function cfgAgregarProducto() {
+          const negocioKey = document.getElementById('cfgNegocio').value;
+          const nombre = (document.getElementById('cfgNombreProd').value || '').trim();
+          const precio = parseInt(document.getElementById('cfgPrecioProd').value, 10) || 0;
+
+          if (!nombre) { mostrarError('Escribe el nombre del producto.'); return; }
+          if (precio <= 0) { mostrarError('Escribe un precio válido mayor a 0.'); return; }
+
+          const all = loadCatalogos();
+          const arr = Array.isArray(all[negocioKey]) ? all[negocioKey] : [];
+          arr.push({ nombre, precio });
+          all[negocioKey] = arr;
+          saveCatalogos(all);
+
+          // Limpiar inputs
+          document.getElementById('cfgNombreProd').value = '';
+          document.getElementById('cfgPrecioProd').value = '';
+
+          // Si estoy en ese negocio en "Entrada de Datos", refrescar selector
+          try { if (document.getElementById('business').value === negocioKey) cargarProductos(); } catch (e) {}
+          renderCatalogoUI();
+          mostrarExito();
+        }
+
+		function abrirModalCredenciales() {
+			const err = document.getElementById('credError');
+			if (err) { err.style.display = 'none'; err.textContent = ''; }
+			// Si pides correo, puedes precargar el del usuario actual:
+			// const user = window.auth?.currentUser;
+			// if (user) document.getElementById('credEmail').value = user.email || '';
+			document.getElementById('credPassword').value = '';
+			document.getElementById('modalCredencialesBackdrop').style.display = 'flex';
+		}
+
+		function cerrarModalCredenciales() {
+			document.getElementById('modalCredencialesBackdrop').style.display = 'none';
+		}
+
+		async function confirmarCredenciales() {
+			const err = document.getElementById('credError');
+			if (!window.auth) {
+				err.textContent = 'No se pudo acceder a la sesión actual.';
+				err.style.display = 'block';
+				return;
+			}
+
+			const user = window.auth.currentUser;
+			if (!user) {
+				err.textContent = 'No hay sesión activa. Inicia sesión nuevamente.';
+				err.style.display = 'block';
+				setTimeout(() => { window.location.href = 'login.html'; }, 1200);
+				return;
+			}
+
+			// Si quieres pedir correo también, usa el input:
+			// const email = (document.getElementById('credEmail').value || '').trim() || user.email;
+			const email = user.email; // usamos el correo de la sesión
+			const password = (document.getElementById('credPassword').value || '');
+
+			if (!password) {
+				err.textContent = 'Ingresa tu contraseña.';
+				err.style.display = 'block';
+				return;
+			}
+
+			try {
+				const cred = window.EmailAuthProvider.credential(email, password);
+				await window.reauthenticateWithCredential(user, cred);
+
+				// Reautenticación OK -> proceder a borrar el producto
+				await __eliminarProductoPersonalizadoConfirmado();
+
+				cerrarModalCredenciales();
+				mostrarExito();
+			} catch (e) {
+				console.error(e);
+				err.textContent = 'Credenciales inválidas. Intenta nuevamente.';
+				err.style.display = 'block';
+			}
+		}
+
+		async function __eliminarProductoPersonalizadoConfirmado() {
+			if (__pendingDeleteIdx == null || !__pendingDeleteNegocioKey) return;
+
+			const all = loadCatalogos();
+			const arr = Array.isArray(all[__pendingDeleteNegocioKey]) ? all[__pendingDeleteNegocioKey] : [];
+			const idx = __pendingDeleteIdx;
+
+			if (idx >= 0 && idx < arr.length) {
+				arr.splice(idx, 1);
+				all[__pendingDeleteNegocioKey] = arr;
+				saveCatalogos(all);
+			}
+
+			// Guardamos para usarlo luego de refrescar UI
+			const negocioKeyUsado = __pendingDeleteNegocioKey;
+
+			// Limpiar estado
+			__pendingDeleteIdx = null;
+			__pendingDeleteNegocioKey = null;
+
+			// Refrescar UI (configuración y, si aplica, selector en Entrada)
+			renderCatalogoUI();
+			try {
+				if (document.getElementById('business').value === negocioKeyUsado) {
+				cargarProductos();
+				}
+			} catch (e) {}
+		}
+
+        // Estado temporal a nivel de archivo para saber qué borrar tras verificar
+		let __pendingDeleteIdx = null;
+		let __pendingDeleteNegocioKey = null;
+
+		function cfgEliminarProducto(idx) {
+			const negocioKey = document.getElementById('cfgNegocio').value;
+
+			// Guardar intención de borrado
+			__pendingDeleteIdx = idx;
+			__pendingDeleteNegocioKey = negocioKey;
+
+			// Abrir modal para pedir contraseña
+			abrirModalCredenciales();
+		}
+
+        // Renderiza la tabla de productos personalizados del negocio seleccionado
+        function renderCatalogoUI() {
+          const wrap = document.getElementById('cfgTablaWrap');
+          if (!wrap) return;
+
+          const negocioKey = document.getElementById('cfgNegocio')?.value || 'Negocio1';
+          const personalizados = getCatalogoPersonalizado(negocioKey);
+
+          if (!personalizados.length) {
+            wrap.innerHTML = '<p style="color:#999;">Este negocio no tiene productos personalizados.</p>';
+            return;
+          }
+
+          let rows = '';
+          personalizados.forEach((p, idx) => {
+            rows += `
+              <tr>
+                <td>${p.nombre}</td>
+                <td style="text-align:right;">${COP(p.precio)}</td>
+                <td style="text-align:center;">
+                  <button class="btn-danger" type="button" onclick="cfgEliminarProducto(${idx})">Eliminar</button>
+                </td>
+              </tr>
+            `;
+          });
+
+          wrap.innerHTML = `
+            <table>
+              <thead>
+                <tr>
+                  <th>Producto (personalizado)</th>
+                  <th style="width:180px;">Precio</th>
+                  <th style="width:140px;">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          `;
+        }		
+
 		// ====== CARGAR PRODUCTOS AUTOMÁTICAMENTE ======
-		function cargarProductos() {
-		  const negocio = document.getElementById("business").value;
-		  const select = document.getElementById("productoSelect");
-		  const precioWrap = document.getElementById("precioPersonalizadoWrap");
-		  const precioInput = document.getElementById("precioPersonalizado");
+        function cargarProductos() {
+          const negocio = document.getElementById("business").value;
+          const select = document.getElementById("productoSelect");
+          const precioWrap = document.getElementById("precioPersonalizadoWrap");
+          const precioInput = document.getElementById("precioPersonalizado");
 
-		  select.innerHTML = "";
+          select.innerHTML = "";
 
-		  // Negocio sin catálogo -> Venta Manual
-		  if (!productos[negocio] || productos[negocio].length === 0) {
-			const opt = document.createElement("option");
-			opt.value = "manual";
-			opt.textContent = "Venta Manual";
-			select.appendChild(opt);
-			document.getElementById("totalVentaPreview").textContent = "$0";
-			// Ocultar input personalizado
-			precioWrap.style.display = "none";
-			precioInput.value = "";
-			return;
-		  }
+          // Catalogo combinado (base + personalizados)
+          const catalogo = getCatalogoCombinado(negocio);
 
-		  // Llenar catálogo
-		  productos[negocio].forEach((p, index) => {
-			const option = document.createElement("option");
-			option.value = index;
-			option.textContent = `${p.nombre} - $${p.precio}`;
-			select.appendChild(option);
-		  });
+          // Negocio sin catálogo -> Venta Manual
+          if (!catalogo || catalogo.length === 0) {
+            const opt = document.createElement("option");
+            opt.value = "manual";
+            opt.textContent = "Venta Manual";
+            select.appendChild(opt);
+            document.getElementById("totalVentaPreview").textContent = "$0";
+            precioWrap.style.display = "none";
+            precioInput.value = "";
+            return;
+          }
 
-		  // Mostrar/ocultar input si es Mojarra (Negocio2)
-		  const idx = parseInt(select.value, 10);
-		  const prod = productos[negocio][idx];
-		  if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("mojarra")) {
-			precioWrap.style.display = "block";
-		  } else {
-			precioWrap.style.display = "none";
-			precioInput.value = "";
-		  }
+          // Llenar catálogo
+          catalogo.forEach((p, index) => {
+            const option = document.createElement("option");
+            option.value = index; // índice dentro del combinado
+            option.textContent = `${p.nombre} - $${p.precio}`;
+            select.appendChild(option);
+          });
 
-			// --- NUEVO: mostrar/ocultar tipo de corriente ---
-			const tipoCorrienteWrap = document.getElementById("tipoCorrienteWrap");
-			const tipoCorrienteInput = document.getElementById("tipoCorriente");
+          // Mostrar/ocultar extras según producto
+          const idx = parseInt(select.value, 10);
+          const prod = catalogo[idx];
 
-			if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("corriente")) {
-			tipoCorrienteWrap.style.display = "block";
-			} else {
-			tipoCorrienteWrap.style.display = "none";
-			if (tipoCorrienteInput) tipoCorrienteInput.value = "";
-			}		  
+          // Mojarra (solo Negocio2)
+          if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("mojarra")) {
+            precioWrap.style.display = "block";
+          } else {
+            precioWrap.style.display = "none";
+            precioInput.value = "";
+          }
 
-		  calcularTotalVenta();
-		}
+          // Tipo de corriente (solo Negocio2)
+          const tipoCorrienteWrap = document.getElementById("tipoCorrienteWrap");
+          const tipoCorrienteInput = document.getElementById("tipoCorriente");
+          if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("corriente")) {
+            tipoCorrienteWrap.style.display = "block";
+          } else {
+            tipoCorrienteWrap.style.display = "none";
+            if (tipoCorrienteInput) tipoCorrienteInput.value = "";
+          }
 
-		// ====== CALCULAR TOTAL (incluye precio personalizado para Mojarra) ======
-		function calcularTotalVenta() {
-		  const negocio = document.getElementById("business").value;
-		  const select = document.getElementById("productoSelect");
-		  const index = select.value;
-		  const cantidad = parseInt(document.getElementById("cantidad").value, 10) || 0;
+          calcularTotalVenta();
+        }
 
-		  const precioWrap = document.getElementById("precioPersonalizadoWrap");
-		  const precioInput = document.getElementById("precioPersonalizado");
+		// ====== CALCULAR TOTAL (incluye precio personalizado para Mojarra y Tipo de corriente) ======
+        function calcularTotalVenta() {
+          const negocio = document.getElementById("business").value;
+          const select = document.getElementById("productoSelect");
+          const index = select.value;
+          const cantidad = parseInt(document.getElementById("cantidad").value, 10) || 0;
 
-		  if (index === 'manual' || !productos[negocio] || !productos[negocio][index]) {
-			document.getElementById("totalVentaPreview").textContent = "$0";
-			return;
-		  }
+          const precioWrap = document.getElementById("precioPersonalizadoWrap");
+          const precioInput = document.getElementById("precioPersonalizado");
 
-		  const prod = productos[negocio][index];
-		  let precioUnitario = prod.precio || 0;
+          const catalogo = getCatalogoCombinado(negocio);
 
-		  // Si es Mojarra (Negocio2) permitir precio > 25.000
-		  if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("mojarra")) {
-			precioWrap.style.display = "block";
-			const personalizado = parseInt(precioInput.value, 10);
-			if (!isNaN(personalizado) && personalizado > 25000) {
-			  precioUnitario = personalizado;
-			}
-		  } else {
-			precioWrap.style.display = "none";
-			precioInput.value = "";
-		  }
+          if (index === 'manual' || !catalogo || !catalogo[index]) {
+            document.getElementById("totalVentaPreview").textContent = "$0";
+            return;
+          }
 
-			// --- NUEVO: toggle del campo 'tipo de corriente' ---
-			const tipoCorrienteWrap = document.getElementById("tipoCorrienteWrap");
-			const tipoCorrienteInput = document.getElementById("tipoCorriente");
+          const prod = catalogo[index];
+          let precioUnitario = prod.precio || 0;
 
-			if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("corriente")) {
-			tipoCorrienteWrap.style.display = "block";
-			} else {
-			tipoCorrienteWrap.style.display = "none";
-			if (tipoCorrienteInput) tipoCorrienteInput.value = "";
-			}
+          // Mojarra personalizada (> 25.000) solo Negocio2
+          if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("mojarra")) {
+            precioWrap.style.display = "block";
+            const personalizado = parseInt(precioInput.value, 10);
+            if (!isNaN(personalizado) && personalizado > 25000) {
+              precioUnitario = personalizado;
+            }
+          } else {
+            precioWrap.style.display = "none";
+            if (precioInput) precioInput.value = "";
+          }
 
-		  const total = precioUnitario * (cantidad || 1);
-		  document.getElementById("totalVentaPreview").textContent = COP(total);
-		}
+          // Tipo de corriente (solo Negocio2)
+          const tipoCorrienteWrap = document.getElementById("tipoCorrienteWrap");
+          const tipoCorrienteInput = document.getElementById("tipoCorriente");
+          if (negocio === "Negocio2" && prod && prod.nombre.toLowerCase().includes("corriente")) {
+            tipoCorrienteWrap.style.display = "block";
+          } else {
+            tipoCorrienteWrap.style.display = "none";
+            if (tipoCorrienteInput) tipoCorrienteInput.value = "";
+          }
+
+          const total = precioUnitario * (cantidad || 1);
+          document.getElementById("totalVentaPreview").textContent = COP(total);
+        }
 
         // Inicializar localStorage
         function inicializarSistema() {
@@ -1173,60 +1445,60 @@
 		}
 
 		// Agregar línea al carrito
-		function agregarAlCarrito() {
-			const negocio = document.getElementById('business').value;
-			const index = document.getElementById("productoSelect").value;
-			const cantidad = parseInt(document.getElementById("cantidad").value, 10) || 0;
+        function agregarAlCarrito() {
+          const negocio = document.getElementById('business').value;
+          const index = document.getElementById("productoSelect").value;
+          const cantidad = parseInt(document.getElementById("cantidad").value, 10) || 0;
 
-			if (!productos[negocio] || index === 'manual' || !productos[negocio][index]) {
-			  mostrarError('Selecciona un producto del catálogo para agregar al pedido.');
-			  return;
-			}
-			if (cantidad <= 0) {
-			  mostrarError('La cantidad debe ser mayor a 0');
-			  return;
-			}
+          const catalogo = getCatalogoCombinado(negocio);
 
-			const prod = productos[negocio][index];
-			let precioUnitario = prod.precio || 0;
+          if (!catalogo || index === 'manual' || !catalogo[index]) {
+            mostrarError('Selecciona un producto del catálogo para agregar al pedido.');
+            return;
+          }
+          if (cantidad <= 0) {
+            mostrarError('La cantidad debe ser mayor a 0');
+            return;
+          }
 
-			// Mojarra con precio personalizado
-			if (negocio === "Negocio2" && prod.nombre.toLowerCase().includes("mojarra")) {
-			  const personalizado = parseInt(document.getElementById("precioPersonalizado").value, 10);
-			  if (!isNaN(personalizado) && personalizado > 25000) {
-				precioUnitario = personalizado;
-			  }
-			}
+          const prod = catalogo[index];
+          let precioUnitario = prod.precio || 0;
 
-			// Exigir 'tipo de corriente' para Corriente (Negocio2)
-			let nombreProductoParaLinea = prod.nombre;
-			if (negocio === "Negocio2" && prod.nombre.toLowerCase().includes("corriente")) {
-			  const tipo = (document.getElementById("tipoCorriente").value || "").trim();
-			  if (!tipo) {
-				mostrarError('Debes indicar el tipo de corriente (ej: pollo, res, mixta).');
-				return;
-			  }
-			  nombreProductoParaLinea = `Corriente (${tipo})`;
-			}
+          // Mojarra con precio personalizado
+          if (negocio === "Negocio2" && prod.nombre.toLowerCase().includes("mojarra")) {
+            const personalizado = parseInt(document.getElementById("precioPersonalizado").value, 10);
+            if (!isNaN(personalizado) && personalizado > 25000) {
+              precioUnitario = personalizado;
+            }
+          }
 
-			const ventas = precioUnitario * cantidad;
+          // Corriente: exigir tipo
+          let nombreProductoParaLinea = prod.nombre;
+          if (negocio === "Negocio2" && prod.nombre.toLowerCase().includes("corriente")) {
+            const tipo = (document.getElementById("tipoCorriente").value || "").trim();
+            if (!tipo) {
+              mostrarError('Debes indicar el tipo de corriente (ej: pollo, res, mixta).');
+              return;
+            }
+            nombreProductoParaLinea = `Corriente (${tipo})`;
+          }
 
-			carrito.push({
-			  producto: nombreProductoParaLinea,
-			  cantidad,
-			  precioUnitario,
-			  ventas
-			  // ❌ ya no guardamos método aquí
-			});
+          const ventas = precioUnitario * cantidad;
 
-			// Reset mínimos del bloque de venta
-			document.getElementById('cantidad').value = '1';
-			const p = document.getElementById('precioPersonalizado');
-			if (p) p.value = '';
+          carrito.push({
+            producto: nombreProductoParaLinea,
+            cantidad,
+            precioUnitario,
+            ventas
+          });
 
-			calcularTotalVenta();
-			renderCarrito();
-		}
+          document.getElementById('cantidad').value = '1';
+          const p = document.getElementById('precioPersonalizado');
+          if (p) p.value = '';
+
+          calcularTotalVenta();
+          renderCarrito();
+        }
 
 		// Vaciar carrito si cambia fecha/negocio (para no mezclar cortes)
 		function resetCarritoSiCambiaCorte() {
@@ -1986,30 +2258,7 @@
 		  // para que no muestre "Método de gasto" si está deshabilitado
 		  try { updateModalPagoUI(); } catch (e) {}
 		}
-		</script><script>
-		// Habilita/deshabilita inputs de gasto según el estado del carrito
-		function updateGastoInputsState() {
-		  const gastosEl = document.getElementById('gastos');
-		  const descEl   = document.getElementById('descripcion');
-
-		  if (!gastosEl || !descEl) return;
-
-		  const disabled = (carrito && carrito.length > 0);
-
-		  // Si hay productos en carrito, limpiar y deshabilitar
-		  if (disabled) {
-			gastosEl.value = '';
-			descEl.value = '';
-		  }
-
-		  gastosEl.disabled = disabled;
-		  descEl.disabled = disabled;
-
-		  // Si el modal "Guardar Registro" está abierto, refrescar su UI
-		  // para que no muestre "Método de gasto" si está deshabilitado
-		  try { updateModalPagoUI(); } catch (e) {}
-		}
-		
+				
 		// ==== MODAL DE CONFIRMACIÓN DE PAGO ====
 		function abrirModalPago() {
 			const gastos = parseFloat(document.getElementById('gastos').value) || 0;
@@ -2202,6 +2451,7 @@
 		  }
 		  if (tabName === 'acumulado') await actualizarAcumulado();
 		  if (tabName === 'metodos') await actualizarAnalisisPagos();
+		  if (tabName === 'configuracion') renderCatalogoUI();
 		}
 		
 		// ===== Cobrar ventas en "Debe" =====
@@ -2259,7 +2509,10 @@
 	  import { 
 		getAuth, 
 		onAuthStateChanged, 
-		signOut 
+		signOut,
+		signInWithEmailAndPassword,
+		reauthenticateWithCredential,
+		EmailAuthProvider
 	  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 	  import { 
@@ -2296,6 +2549,12 @@
 	  window.where = where;
 	  window.doc = doc;
 	  window.updateDoc = updateDoc;
+
+	  // Hacer accesible la sesión y métodos de auth a scripts no-módulo
+	  window.auth = auth;
+	  window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+	  window.reauthenticateWithCredential = reauthenticateWithCredential;
+	  window.EmailAuthProvider = EmailAuthProvider;
 
 	  // 🔐 VALIDAR SESIÓN
  	  onAuthStateChanged(auth, (user) => {
