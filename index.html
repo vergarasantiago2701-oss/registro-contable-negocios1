@@ -381,6 +381,88 @@
 			animation: shake 0.3s ease-in-out;
 			border-color: #dc3545 !important; /* rojo de error */
 		}
+		/* Contenedor con scroll horizontal solo para la tabla “grande” */
+		.table-responsive{
+		  width: 100%;
+		  overflow-x: auto;
+		  -webkit-overflow-scrolling: touch;
+		}
+		
+		/* La tabla de 12 columnas debe tener un ancho mínimo y layout fijo */
+		#resumenContent table.tabla-registros{
+		  table-layout: fixed;
+		  width: 100%;
+		  min-width: 1100px; /* ajusta si necesitas más o menos */
+		}
+		
+		#resumenContent table.tabla-registros th,
+		#resumenContent table.tabla-registros td{
+		  white-space: normal;
+		  word-break: break-word;
+		  overflow-wrap: anywhere;
+		  padding: 8px 6px;
+		  font-size: 13px;
+		  line-height: 1.2;
+		}
+		
+		/* Anchos por columna (1..12) solo para la tabla grande */
+		#resumenContent table.tabla-registros th:nth-child(1),
+		#resumenContent table.tabla-registros td:nth-child(1){ width: 90px;  max-width: 90px; }
+		
+		#resumenContent table.tabla-registros th:nth-child(2),
+		#resumenContent table.tabla-registros td:nth-child(2){ width: 150px; max-width: 150px; }
+		
+		#resumenContent table.tabla-registros th:nth-child(3),
+		#resumenContent table.tabla-registros td:nth-child(3){ width: 60px;  max-width: 60px;  }
+		
+		#resumenContent table.tabla-registros th:nth-child(4),
+		#resumenContent table.tabla-registros td:nth-child(4){ width: 90px;  max-width: 90px;  }
+		
+		#resumenContent table.tabla-registros th:nth-child(5),
+		#resumenContent table.tabla-registros td:nth-child(5){ width: 90px;  max-width: 90px;  }
+		
+		#resumenContent table.tabla-registros th:nth-child(6),
+		#resumenContent table.tabla-registros td:nth-child(6){ width: 90px;  max-width: 90px;  }
+		
+		#resumenContent table.tabla-registros th:nth-child(7),
+		#resumenContent table.tabla-registros td:nth-child(7){ width: 90px;  max-width: 90px;  }
+		
+		#resumenContent table.tabla-registros th:nth-child(8),
+		#resumenContent table.tabla-registros td:nth-child(8){ width: 80px;  max-width: 80px;  }
+		
+		#resumenContent table.tabla-registros th:nth-child(9),
+		#resumenContent table.tabla-registros td:nth-child(9){ width: 130px; max-width: 130px; }
+		
+		#resumenContent table.tabla-registros th:nth-child(10),
+		#resumenContent table.tabla-registros td:nth-child(10){ width: 180px; max-width: 180px; }
+		
+		#resumenContent table.tabla-registros th:nth-child(11),
+		#resumenContent table.tabla-registros td:nth-child(11){ width: 110px; max-width: 110px; }
+		
+		#resumenContent table.tabla-registros th:nth-child(12),
+		#resumenContent table.tabla-registros td:nth-child(12){ width: 110px; max-width: 110px; }
+		
+		/* Evita que el botón expanda la columna */
+		#resumenContent table.tabla-registros td:nth-child(12) .btn-success{
+		  width: 100%;
+		  max-width: 100%;
+		  padding: 8px 0;
+		  white-space: nowrap;
+		}
+		
+		/* Modo compacto móvil: oculta columnas menos críticas y reduce min-width */
+		@media (max-width: 768px){
+		  /* 4=Precio, 9=Cliente, 10=Descripción */
+		  #resumenContent table.tabla-registros th:nth-child(4),
+		  #resumenContent table.tabla-registros td:nth-child(4),
+		  #resumenContent table.tabla-registros th:nth-child(9),
+		  #resumenContent table.tabla-registros td:nth-child(9),
+		  #resumenContent table.tabla-registros th:nth-child(10),
+		  #resumenContent table.tabla-registros td:nth-child(10){
+		    display: none;
+		  }
+		  #resumenContent table.tabla-registros{ min-width: 820px; }
+		}
     </style>
 </head>
 <body>
@@ -1798,7 +1880,13 @@
 					<span style="color:#007bff;font-weight:bold;">${COP(saldoNequi)}</span>
 				  </div>
 				</div>
-				${registrosParaTabla.length > 0 ? `<table>${generarTablaRegistros(registrosParaTabla)}</table>` : '<p style="color:#999;margin-top:15px;">No hay registros para esta fecha</p>'}
+				${registrosParaTabla.length > 0
+				  ? `<div class="table-responsive">
+				       <table class="tabla-registros">
+				         ${generarTablaRegistros(registrosParaTabla)}
+				       </table>
+				     </div>`
+				  : '<p style="color:#999;margin-top:15px;">No hay registros para esta fecha</p>'}
 				${agruparPlatosPorProducto(registrosParaTabla)}
 			  </div>
 			`;
@@ -2317,54 +2405,68 @@
 		
 		// === Reemplazar COMPLETO ===
 		function generarTablaRegistros(registros) {
-		  let html = '<tr>' +
-			'<th>Fecha</th><th>Producto</th><th>Cant.</th><th>Precio</th>' +
-			'<th>Ventas</th><th>Gastos</th><th>Método</th><th>Estado</th>' +
-			'<th>Cliente</th><th>Descripción</th><th>Pendiente</th><th>Acciones</th>' +
-		  '</tr>';
-
+		  const header = `
+		    <thead>
+		      <tr>
+		        <th>Fecha</th>
+		        <th>Producto</th>
+		        <th>Cant.</th>
+		        <th>Precio</th>
+		        <th>Ventas</th>
+		        <th>Gastos</th>
+		        <th>Método</th>
+		        <th>Estado</th>
+		        <th>Cliente</th>
+		        <th>Descripción</th>
+		        <th>Pendiente</th>
+		        <th>Acciones</th>
+		      </tr>
+		    </thead>
+		  `;
+		
+		  let body = '<tbody>';
+		
 		  registros.forEach(r => {
-			const ventasNum = Number(r.ventas || 0);
-			const gastosNum = Number(r.gastos || 0);
-			const precioFmt = (r.precioUnitario != null) ? COP(r.precioUnitario) : '-';
-			const ventasFmt = (r.tipo === "movimiento") ? COP(ventasNum) : "-";
-			const estadoFmt = r.estadoPago || '-';
-			const clienteFmt = r.cliente || '-';
-			const gastosFmt = (r.tipo === "movimiento") ? '-' + COP(gastosNum) : "-";
-			const metodoFmt = (r.tipo === "movimiento")
-			  ? (r.metodo === 'Efectivo' ? '💵 Efectivo' : (r.metodo === 'Nequi' ? '📱 Nequi' : (r.metodo || '-')))
-			  : "-";
-
-			// NUEVO: calcular “Pendiente” por línea (si está en Debe)
-			const pendienteFmt = (r.estadoPago === 'Debe')
-			  ? COP((r.montoPendiente != null ? r.montoPendiente : r.ventas) || 0)
-			  : '-';
-
-			// Mostrar botón Cobrar si está "Debe" y es una venta
-			const puedeCobrar = r.tipo === 'movimiento' && ventasNum > 0 && estadoFmt === 'Debe' && !!r.id;
-			const acciones = puedeCobrar
-			  ? `<button class="btn-success" type="button" onclick="abrirModalCobrar('${r.id}')">Cobrar</button>`
-			  : '-';
-
-			html += `
-			  <tr>
-				<td>${r.fecha}</td>
-				<td>${r.producto || '-'}</td>
-				<td>${r.cantidad ?? '-'}</td>
-				<td>${precioFmt}</td>
-				<td style="color:#007bff;">${ventasFmt}</td>
-				<td style="color:#dc3545;">${gastosFmt}</td>
-				<td>${metodoFmt}</td>
-				<td>${estadoFmt}</td>
-				<td>${clienteFmt}</td>
-				<td>${r.descripcion || '-'}</td>
-				<td style="color:#d39e00;font-weight:600;">${pendienteFmt}</td>
-				<td>${acciones}</td>
-			  </tr>
-			`;
+		    const ventasNum = Number(r.ventas || 0);
+		    const gastosNum = Number(r.gastos || 0);
+		    const precioFmt = (r.precioUnitario != null) ? COP(r.precioUnitario) : '-';
+		    const ventasFmt = (r.tipo === "movimiento") ? COP(ventasNum) : "-";
+		    const estadoFmt = r.estadoPago || '-';
+		    const clienteFmt = r.cliente || '-';
+		    const gastosFmt = (r.tipo === "movimiento") ? '-' + COP(gastosNum) : "-";
+		    const metodoFmt = (r.tipo === "movimiento")
+		      ? (r.metodo === 'Efectivo' ? '💵 Efectivo' : (r.metodo === 'Nequi' ? '📱 Nequi' : (r.metodo || '-')))
+		      : "-";
+		
+		    const pendienteFmt = (r.estadoPago === 'Debe')
+		      ? COP((r.montoPendiente != null ? r.montoPendiente : r.ventas) || 0)
+		      : '-';
+		
+		    const puedeCobrar = r.tipo === 'movimiento' && ventasNum > 0 && estadoFmt === 'Debe' && !!r.id;
+		    const acciones = puedeCobrar
+		      ? `<button class="btn-success" type="button" onclick="abrirModalCobrar('${r.id}')">Cobrar</button>`
+		      : '-';
+		
+		    body += `
+		      <tr>
+		        <td>${r.fecha}</td>
+		        <td>${r.producto || '-'}</td>
+		        <td>${r.cantidad ?? '-'}</td>
+		        <td>${precioFmt}</td>
+		        <td style="color:#007bff;">${ventasFmt}</td>
+		        <td style="color:#dc3545;">${gastosFmt}</td>
+		        <td>${metodoFmt}</td>
+		        <td>${estadoFmt}</td>
+		        <td>${clienteFmt}</td>
+		        <td>${r.descripcion || '-'}</td>
+		        <td style="color:#d39e00;font-weight:600;">${pendienteFmt}</td>
+		        <td>${acciones}</td>
+		      </tr>
+		    `;
 		  });
-
-		  return html;
+		
+		  body += '</tbody>';
+		  return header + body;
 		}
 
         // Limpiar formulario
