@@ -17,20 +17,15 @@
             min-height: 100vh;
             padding: 20px;
         }
-
-		html, body {
-			max-width: 100%;
-			overflow-x: hidden;
-		}
         
         .container {
-			width: 95%;
-			max-width: 1400px;
-			margin: 0 auto;
-			background: white;
-			border-radius: 10px;
-			box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-		}
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
         
         .header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -238,7 +233,7 @@
             background: #667eea;
             color: white;
             padding: 15px;
-            text-align: center;
+            text-align: left;
             font-weight: 600;
         }
         
@@ -385,100 +380,6 @@
 			.input-shake {
 			animation: shake 0.3s ease-in-out;
 			border-color: #dc3545 !important; /* rojo de error */
-		}
-		table {
-			width: 100%;
-			border-collapse: collapse;
-			table-layout: fixed;
-		}
-
-		th, td {
-			padding: 8px;
-			text-align: center;
-			font-size: 14px;
-			white-space: normal;
-			word-wrap: break-word;
-		}
-		/* === Tablas del Resumen Diario (generadas por generarTablaRegistros) === */
-		#resumenContent table {
-		table-layout: fixed;      /* mantiene anchos fijos según los th/td */
-		width: 100%;
-		}
-
-		#resumenContent table th,
-		#resumenContent table td {
-		/* Hace que el texto baje a varias líneas sin romper diseño */
-		white-space: normal;
-		word-break: break-word;
-		overflow-wrap: anywhere;
-
-		/* Un poco más compacto para que quepa mejor */
-		padding: 8px 6px;
-		font-size: 13px;
-		line-height: 1.2;
-		}
-
-		/* === Anchos fijos por columna (12 columnas en tu header) === */
-		/* 1 Fecha */        #resumenContent table th:nth-child(1),
-		#resumenContent table td:nth-child(1) { width: 90px;  max-width: 90px;  }
-
-		/* 2 Producto */     #resumenContent table th:nth-child(2),
-		#resumenContent table td:nth-child(2) { width: 150px; max-width: 150px; }
-
-		/* 3 Cant. */        #resumenContent table th:nth-child(3),
-		#resumenContent table td:nth-child(3) { width: 60px;  max-width: 60px;  }
-
-		/* 4 Precio */       #resumenContent table th:nth-child(4),
-		#resumenContent table td:nth-child(4) { width: 90px;  max-width: 90px;  }
-
-		/* 5 Ventas */       #resumenContent table th:nth-child(5),
-		#resumenContent table td:nth-child(5) { width: 90px;  max-width: 90px;  }
-
-		/* 6 Gastos */       #resumenContent table th:nth-child(6),
-		#resumenContent table td:nth-child(6) { width: 90px;  max-width: 90px;  }
-
-		/* 7 Método */       #resumenContent table th:nth-child(7),
-		#resumenContent table td:nth-child(7) { width: 90px;  max-width: 90px;  }
-
-		/* 8 Estado */       #resumenContent table th:nth-child(8),
-		#resumenContent table td:nth-child(8) { width: 80px;  max-width: 80px;  }
-
-		/* 9 Cliente */      #resumenContent table th:nth-child(9),
-		#resumenContent table td:nth-child(9) { width: 130px; max-width: 130px; }
-
-		/* 10 Descripción */ #resumenContent table th:nth-child(10),
-		#resumenContent table td:nth-child(10){ width: 180px; max-width: 180px; }
-
-		/* 11 Pendiente */   #resumenContent table th:nth-child(11),
-		#resumenContent table td:nth-child(11){ width: 110px; max-width: 110px; }
-
-		/* 12 Acciones */    #resumenContent table th:nth-child(12),
-		#resumenContent table td:nth-child(12){ width: 110px; max-width: 110px; }
-
-		/* Asegura que el botón "Cobrar" no expanda su columna */
-		#resumenContent table td:nth-child(12) .btn-success {
-		width: 100%;
-		max-width: 100%;
-		padding: 8px 0;
-		white-space: nowrap;  /* el texto del botón no se corta */
-		}
-
-		/* ====== Responsivo: pantallas ≤ 768px ====== */
-		@media (max-width: 768px) {
-
-		#resumenContent table th,
-		#resumenContent table td {
-			font-size: 12px;
-			padding: 6px 4px;
-		}
-
-		/* Ajustes de anchos para móviles */
-		#resumenContent table th:nth-child(2),
-		#resumenContent table td:nth-child(2) { width: 130px; max-width: 130px; } /* Producto */
-		#resumenContent table th:nth-child(10),
-		#resumenContent table td:nth-child(10){ width: 160px; max-width: 160px; } /* Descripción */
-		#resumenContent table th:nth-child(12),
-		#resumenContent table td:nth-child(12){ width: 96px;  max-width: 96px;  } /* Acciones */
 		}
     </style>
 </head>
@@ -711,7 +612,7 @@
             
             <div class="business-section">
                 <h4>Información del Sistema</h4>
-                <p><strong>Versión:</strong> 1.8.2</p>
+                <p><strong>Versión:</strong> 1.7</p>
                 <p><strong>Negocios Registrados:</strong> 4</p>
                 <p><strong>Datos Almacenados:</strong> <span id="totalRegistros">0</span> registros</p>
             </div>
@@ -2416,78 +2317,54 @@
 		
 		// === Reemplazar COMPLETO ===
 		function generarTablaRegistros(registros) {
+		  let html = '<tr>' +
+			'<th>Fecha</th><th>Producto</th><th>Cant.</th><th>Precio</th>' +
+			'<th>Ventas</th><th>Gastos</th><th>Método</th><th>Estado</th>' +
+			'<th>Cliente</th><th>Descripción</th><th>Pendiente</th><th>Acciones</th>' +
+		  '</tr>';
 
-			// === Encabezado de tabla (thead) ===
-			const header = `
-				<thead>
-				<tr>
-					<th>Fecha</th>
-					<th>Producto</th>
-					<th>Cant.</th>
-					<th>Precio</th>
-					<th>Ventas</th>
-					<th>Gastos</th>
-					<th>Método</th>
-					<th>Estado</th>
-					<th>Cliente</th>
-					<th>Descripción</th>
-					<th>Pendiente</th>
-					<th>Acciones</th>
-				</tr>
-				</thead>
+		  registros.forEach(r => {
+			const ventasNum = Number(r.ventas || 0);
+			const gastosNum = Number(r.gastos || 0);
+			const precioFmt = (r.precioUnitario != null) ? COP(r.precioUnitario) : '-';
+			const ventasFmt = (r.tipo === "movimiento") ? COP(ventasNum) : "-";
+			const estadoFmt = r.estadoPago || '-';
+			const clienteFmt = r.cliente || '-';
+			const gastosFmt = (r.tipo === "movimiento") ? '-' + COP(gastosNum) : "-";
+			const metodoFmt = (r.tipo === "movimiento")
+			  ? (r.metodo === 'Efectivo' ? '💵 Efectivo' : (r.metodo === 'Nequi' ? '📱 Nequi' : (r.metodo || '-')))
+			  : "-";
+
+			// NUEVO: calcular “Pendiente” por línea (si está en Debe)
+			const pendienteFmt = (r.estadoPago === 'Debe')
+			  ? COP((r.montoPendiente != null ? r.montoPendiente : r.ventas) || 0)
+			  : '-';
+
+			// Mostrar botón Cobrar si está "Debe" y es una venta
+			const puedeCobrar = r.tipo === 'movimiento' && ventasNum > 0 && estadoFmt === 'Debe' && !!r.id;
+			const acciones = puedeCobrar
+			  ? `<button class="btn-success" type="button" onclick="abrirModalCobrar('${r.id}')">Cobrar</button>`
+			  : '-';
+
+			html += `
+			  <tr>
+				<td>${r.fecha}</td>
+				<td>${r.producto || '-'}</td>
+				<td>${r.cantidad ?? '-'}</td>
+				<td>${precioFmt}</td>
+				<td style="color:#007bff;">${ventasFmt}</td>
+				<td style="color:#dc3545;">${gastosFmt}</td>
+				<td>${metodoFmt}</td>
+				<td>${estadoFmt}</td>
+				<td>${clienteFmt}</td>
+				<td>${r.descripcion || '-'}</td>
+				<td style="color:#d39e00;font-weight:600;">${pendienteFmt}</td>
+				<td>${acciones}</td>
+			  </tr>
 			`;
+		  });
 
-			// === Cuerpo de tabla (tbody) ===
-			let body = '<tbody>';
-
-			registros.forEach(r => {
-				const ventasNum = Number(r.ventas || 0);
-				const gastosNum = Number(r.gastos || 0);
-				const precioFmt = (r.precioUnitario != null) ? COP(r.precioUnitario) : '-';
-				const ventasFmt = r.tipo === "movimiento" ? COP(ventasNum) : "-";
-				const gastosFmt = r.tipo === "movimiento" ? "-" + COP(gastosNum) : "-";
-				const metodoFmt = r.metodo === "Efectivo" ? "💵 Efectivo" :
-								r.metodo === "Nequi" ? "📱 Nequi" :
-								(r.metodo || "-");
-				const estadoFmt = r.estadoPago || "-";
-				const clienteFmt = r.cliente || "-";
-
-				const pendienteFmt =
-				r.estadoPago === "Debe"
-					? COP((r.montoPendiente != null ? r.montoPendiente : r.ventas) || 0)
-					: "-";
-
-				const puedeCobrar =
-				r.tipo === "movimiento" &&
-				ventasNum > 0 &&
-				estadoFmt === "Debe" &&
-				!!r.id;
-
-				const acciones = puedeCobrar
-				? `<button class="btn-success" type="button" onclick="abrirModalCobrar('${r.id}')">Cobrar</button>`
-				: "-";
-
-				body += `
-				<tr>
-					<td>${r.fecha}</td>
-					<td>${r.producto || "-"}</td>
-					<td>${r.cantidad ?? "-"}</td>
-					<td>${precioFmt}</td>
-					<td style="color:#007bff;">${ventasFmt}</td>
-					<td style="color:#dc3545;">${gastosFmt}</td>
-					<td>${metodoFmt}</td>
-					<td>${estadoFmt}</td>
-					<td>${clienteFmt}</td>
-					<td>${r.descripcion || "-"}</td>
-					<td style="color:#d39e00;font-weight:600;">${pendienteFmt}</td>
-					<td>${acciones}</td>
-				</tr>
-				`;
-			});
-
-			body += "</tbody>";
-
-			return header + body;
+		  return html;
 		}
 
         // Limpiar formulario
