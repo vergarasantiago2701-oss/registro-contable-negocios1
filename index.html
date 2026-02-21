@@ -462,7 +462,7 @@
 		padding: 8px 0;
 		white-space: nowrap;  /* el texto del botón no se corta */
 		}
-
+		
 		/* ====== Responsivo: pantallas ≤ 768px ====== */
 		@media (max-width: 768px) {
 
@@ -479,6 +479,47 @@
 		#resumenContent table td:nth-child(10){ width: 160px; max-width: 160px; } /* Descripción */
 		#resumenContent table th:nth-child(12),
 		#resumenContent table td:nth-child(12){ width: 96px;  max-width: 96px;  } /* Acciones */
+		}
+		/* === Botón 'Cobrar' dentro de la tabla del Resumen Diario === */
+		#resumenContent table td:nth-child(12) {
+			/* asegura que la celda de acciones no crezca más de lo debido */
+			text-align: center;
+			vertical-align: middle;
+			padding: 6px; /* compacta la celda */
+		}
+
+		#resumenContent table td:nth-child(12) .btn-success {
+			display: inline-block;       /* evita estirar la altura de la fila */
+			width: 100%;                 /* ocupa el ancho de la columna */
+			max-width: 100%;
+			padding: 6px 0 !important;   /* 👈 reduce el padding del botón */
+			font-size: 12px;             /* 👈 texto más compacto */
+			line-height: 1.1;            /* 👈 no infla altura */
+			border-radius: 6px;
+			white-space: nowrap;         /* no parte "Cobrar" en dos líneas */
+			overflow: hidden;            /* por si en algún momento hay más texto */
+			text-overflow: ellipsis;
+			box-sizing: border-box;
+		}
+
+		/* Opcional: desactivar el 'salto' visual del hover para que no cambie altura */
+		#resumenContent table td:nth-child(12) .btn-success:hover {
+			transform: none;             /* sin levantar */
+			box-shadow: none;            /* sin sombra extra */
+		}
+		/* === Ajuste FINAL para móviles: que gane sobre cualquier regla previa === */
+		@media (max-width: 768px) {
+			/* Compacta la celda de acciones */
+			#resumenContent table td:nth-child(12) {
+				padding: 4px; /* un poco menos que en desktop */
+			}
+
+			/* Compacta el botón Cobrar */
+			#resumenContent table td:nth-child(12) .btn-success {
+				padding: 4px 0 !important;   /* ⬅️ Gana porque está al final y con !important */
+				font-size: 11px !important;  /* ⬅️ Gana sobre el 12px previo */
+				line-height: 1.1;
+			}
 		}
     </style>
 </head>
