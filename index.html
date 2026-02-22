@@ -694,7 +694,7 @@
             
             <div class="business-section">
                 <h4>Información del Sistema</h4>
-                <p><strong>Versión:</strong> 1.7</p>
+                <p><strong>Versión:</strong> 1.8</p>
                 <p><strong>Negocios Registrados:</strong> 4</p>
                 <p><strong>Datos Almacenados:</strong> <span id="totalRegistros">0</span> registros</p>
             </div>
@@ -1817,8 +1817,12 @@
 
 			// === BLOQUE NUEVO: cálculo de saldos del día (con o sin deudas) ===
 			const registrosParaSaldos = excluirDeudasResumen
-			  ? delDia.filter(r => r.tipo === "movimiento" && (r.estadoPago === 'Pagado' || r.estadoPago == null))
-			  : delDia;
+				? delDia.filter(r =>
+					r.tipo === "movimiento" &&
+					(r.estadoPago === 'Pagado' || r.estadoPago == null) &&
+					r.excluirDeAnalisis !== true
+					)
+				: delDia;
 
 			let ventasEfectivo = 0;
 			let ventasNequi = 0;
@@ -2103,16 +2107,38 @@
 			});
 
 			if (tipo === 'total') {
-			  // Pago total: marcar todas las ventas como Pagado (no creamos abonos)
-			  await Promise.all(
-				deudas.map(r =>
-				  updateDoc(doc(db, "registros", r.id), {
+				await Promise.all(deudas.map(async (r) => {
+					const pendiente = Number((r.montoPendiente != null ? r.montoPendiente : r.ventas) || 0);
+
+					if (pendiente > 0) {
+					// Crear un ABONO por el pendiente con el método elegido (p.ej., Nequi)
+					await addDoc(collection(db, "registros"), {
+						tipo: "movimiento",
+						negocio: r.negocio,
+						fecha: hoyLocalISO(),
+						producto: null,
+						cantidad: null,
+						precioUnitario: null,
+						ventas: pendiente,           // 👈 SOLO el pendiente (28.000 en tu caso)
+						gastos: 0,
+						metodo: metodo,              // 👈 “Nequi” si elegiste Nequi
+						estadoPago: 'Pagado',
+						cliente: clienteACobrar,
+						esAbono: true,
+						originalId: r.id,            // 🔗 referencia al documento original
+						descripcion: `Cobro final de deuda (venta del ${r.fecha})`,
+						createdAt: new Date()
+					});
+					}
+
+					// Marcar el original como Pagado y excluirlo del análisis de flujos
+					await updateDoc(doc(db, "registros", r.id), {
 					estadoPago: 'Pagado',
-					metodo: metodo,
-					montoPendiente: 0
-				  })
-				)
-			  );
+					montoPendiente: 0,
+					excluirDeAnalisis: true       // 👈 evita doble conteo del original
+					// NO tocar 'metodo' ni 'ventas' del original
+					});
+				}));
 			} else {
 			  // Pago parcial: repartir el monto por orden FIFO creando "abonos" como movimientos Pagados
 			  let restante = montoParcial;
@@ -2137,6 +2163,7 @@
 				  cliente: clienteACobrar,
 				  esAbono: true,                    // flag para identificar abonos
 				  descripcion: `Cobro parcial de deuda (venta del ${r.fecha})`,
+				  originalId: r.id,
 				  createdAt: new Date()
 				});
 
@@ -2215,6 +2242,7 @@
 			  //    - Esto mantiene abonos como ENTRADAS de efectivo/nequi, que es correcto
 			  registros.forEach(r => {
 				if (r.tipo !== 'movimiento') return;
+				if (r.excluirDeAnalisis === true) return; // evita duplicar originales saldados
 				const v = Number(r.ventas || 0);
 				const g = Number(r.gastos || 0);
 
@@ -2779,16 +2807,52 @@
 			}
 			const metodoSel = document.querySelector('input[name="metodoCobro"]:checked')?.value || 'Efectivo';
 
-			await updateDoc(doc(db, "registros", ventaACobrarId), {
-				estadoPago: 'Pagado',
+			// Leer el doc original para saber cuánto está pendiente
+			const ref  = doc(db, "registros", ventaACobrarId);
+			const snap = await getDoc(ref);
+			if (!snap.exists()) {
+				err.textContent = '✗ La venta ya no existe.';
+				err.style.display = 'block';
+				return;
+			}
+
+			const r = snap.data();
+			const pendiente = Number((r.montoPendiente != null ? r.montoPendiente : r.ventas) || 0);
+			const cliente   = (r.cliente && String(r.cliente).trim()) ? r.cliente.trim() : null;
+
+			if (pendiente > 0) {
+				// Crear el ABONO del pendiente con el método elegido
+				await addDoc(collection(db, "registros"), {
+				tipo: "movimiento",
+				negocio: r.negocio,
+				fecha: hoyLocalISO(),
+				producto: null,
+				cantidad: null,
+				precioUnitario: null,
+				ventas: pendiente,
+				gastos: 0,
 				metodo: metodoSel,
-				montoPendiente: 0
+				estadoPago: 'Pagado',
+				cliente: cliente,
+				esAbono: true,
+				originalId: ventaACobrarId,
+				descripcion: `Cobro final de deuda (venta del ${r.fecha})`,
+				createdAt: new Date()
+				});
+			}
+
+			// Marcar el original como Pagado + excluir de análisis de flujos
+			await updateDoc(ref, {
+				estadoPago: 'Pagado',
+				montoPendiente: 0,
+				excluirDeAnalisis: true
+				// No tocar 'metodo' ni 'ventas' del original
 			});
 
 			cerrarModalCobrar();
 			mostrarExito();
 
-			// Refrescar tableros (por si estás en cualquiera)
+			// Refrescar vistas
 			try { await actualizarResumen(); } catch(e) {}
 			try { await actualizarAnalisisPagos(); } catch(e) {}
 			try { await actualizarAcumulado(); } catch(e) {}
@@ -2818,7 +2882,8 @@
 		getFirestore, 
 		collection, 
 		addDoc, 
-		getDocs, 
+		getDocs,
+		getDoc,
 		query, 
 		where,
 		doc,
@@ -2845,6 +2910,7 @@
 	  window.collection = collection;
 	  window.addDoc = addDoc;
 	  window.getDocs = getDocs;
+	  window.getDoc  = getDoc;
 	  window.query = query;
 	  window.where = where;
 	  window.doc = doc;
