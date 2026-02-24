@@ -743,7 +743,7 @@
             
             <div class="business-section">
                 <h4>Información del Sistema</h4>
-                <p><strong>Versión:</strong> 1.9</p>
+                <p><strong>Versión:</strong> 1.10</p>
                 <p><strong>Negocios Registrados:</strong> 4</p>
                 <p><strong>Datos Almacenados:</strong> <span id="totalRegistros">0</span> registros</p>
             </div>
@@ -827,7 +827,7 @@
 			</details>
 
 			<!-- ====== Resumen por Período ====== -->
-			<details id="secPeriodo" open>
+			<details id="secPeriodo">
 				<summary>
 				<span class="summary-title"><span class="chev">▶</span> Resumen por Período</span>
 				</summary>
@@ -881,7 +881,7 @@
 			</details>
 
 			<!-- ====== Estado de Resultados (P&L) ====== -->
-			<details id="secPL" open>
+			<details id="secPL">
 				<summary>
 				<span class="summary-title"><span class="chev">▶</span> Estado de Resultados (P&amp;L)</span>
 				</summary>
@@ -1047,6 +1047,12 @@
           <button class="modal-close" onclick="cerrarModalCobroCliente()" aria-label="Cerrar">✖</button>
         </div>
 
+		<!-- Dentro de #modalCobroClienteBackdrop .modal-body -->
+		<div class="input-field" style="margin-top:10px;">
+			<label for="negocioCobroCliente">Negocios en los que debe (opcional):</label>
+			<select id="negocioCobroCliente"></select>
+		</div>
+
         <div class="modal-body">
           <p><strong>Cliente:</strong> <span id="cxcClienteNombre"></span></p>
           <p><strong>Total por cobrar:</strong> <span id="cxcClienteDeuda">$0</span></p>
@@ -1186,6 +1192,25 @@
 		  minimumFractionDigits: 0,
 		  maximumFractionDigits: 0
 		}).format(Number(n) || 0);
+
+		// ===== Caché en memoria (TTL sencillo) =====
+		const __cache = new Map(); // key -> { data, ts }
+		const CACHE_TTL_MS = 60 * 1000; // 60s; ajusta si quieres
+
+		function setCache(key, data){
+			__cache.set(key, { data, ts: Date.now() });
+		}
+		function getCache(key){
+			const hit = __cache.get(key);
+			if (!hit) return null;
+			if (Date.now() - hit.ts > CACHE_TTL_MS) { __cache.delete(key); return null; }
+			return hit.data;
+		}
+		function invalidateCacheByPrefix(prefix){
+			for (const k of __cache.keys()){
+				if (k.startsWith(prefix)) __cache.delete(k);
+			}
+		}
 
         /* =========================
           Catálogos personalizados
@@ -1669,38 +1694,80 @@
 			cargarProductos();
 			updateGastoInputsState();
         }
-		async function obtenerTodosLosRegistros() {
-			const snapshot = await getDocs(collection(db, "registros"));
+		// ===== Helpers de consulta (filtradas) =====
+		async function fetchPorDia(fechaISO, negocioSel='Todos'){
+			const cacheKey = `dia:${fechaISO}:${negocioSel}`;
+			const hit = getCache(cacheKey);
+			if (hit) return hit;
 
-			const datos = {
-				Negocio1: [],
-				Negocio2: [],
-				Negocio3: [],
-				Negocio4: []
-			};
+			const datos = { Negocio1: [], Negocio2: [], Negocio3: [], Negocio4: [] };
+			const negocios = (negocioSel==='Todos') ? Object.keys(nombresNegocios) : [negocioSel];
 
-			snapshot.forEach(d => {
-				const data = d.data();
-
-				// Resolver key del negocio a partir del nombre almacenado
-				let negocioKey = Object.keys(nombresNegocios).find(key =>
-				nombresNegocios[key] === data.negocio || key === data.negocio
+			// 1 consulta por negocio (evita traer todo)
+			for (const neg of negocios){
+				const nombre = nombresNegocios[neg] || neg;
+				const qRef = window.query(
+				window.collection(window.db, 'registros'),
+				window.where('fecha','==', fechaISO),
+				window.where('negocio','==', nombre)
 				);
+				const snap = await window.getDocs(qRef);
+				snap.forEach(d => datos[neg].push({ id: d.id, ...d.data() }));
+			}
+			setCache(cacheKey, datos);
+			return datos;
+		}
 
-				// Normalizar strings por si vinieran con diferencias de casing o espacios
-				if (!negocioKey && typeof data.negocio === 'string') {
-				const nom = data.negocio.trim().toLowerCase();
-				negocioKey = Object.keys(nombresNegocios).find(key =>
-					(nombresNegocios[key] || '').toLowerCase() === nom || key.toLowerCase() === nom
+		async function fetchPorRango(desdeISO, hastaISO, negocioSel='Todos'){
+			const cacheKey = `rng:${desdeISO}:${hastaISO}:${negocioSel}`;
+			const hit = getCache(cacheKey);
+			if (hit) return hit;
+
+			const datos = { Negocio1: [], Negocio2: [], Negocio3: [], Negocio4: [] };
+			const negocios = (negocioSel==='Todos') ? Object.keys(nombresNegocios) : [negocioSel];
+
+			for (const neg of negocios){
+				const nombre = nombresNegocios[neg] || neg;
+				const qRef = window.query(
+				window.collection(window.db, 'registros'),
+				window.where('negocio','==', nombre),
+				window.where('fecha','>=', desdeISO),
+				window.where('fecha','<=', hastaISO)
 				);
-				}
+				const snap = await window.getDocs(qRef);
+				snap.forEach(d => datos[neg].push({ id: d.id, ...d.data() }));
+			}
+			setCache(cacheKey, datos);
+			return datos;
+		}
 
-				if (negocioKey) {
-				// ⟵ IMPORTANTE: guardar también el id del documento
-				datos[negocioKey].push({ id: d.id, ...data });
-				}
-			});
+		async function fetchDeudas(negocioSel='Todos', {desdeISO=null, hastaISO=null, cliente=null} = {}){
+			const keyRango = `${desdeISO||''}-${hastaISO||''}`;
+			const cacheKey = `cxc:${negocioSel}:${keyRango}:${cliente || ''}`;
+			const hit = getCache(cacheKey);
+			if (hit) return hit;
 
+			const datos = { Negocio1: [], Negocio2: [], Negocio3: [], Negocio4: [] };
+			const negocios = (negocioSel==='Todos') ? Object.keys(nombresNegocios) : [negocioSel];
+
+			for (const neg of negocios){
+				const nombre = nombresNegocios[neg] || neg;
+				let qArgs = [
+				window.collection(window.db, 'registros'),
+				window.where('negocio','==', nombre),
+				window.where('estadoPago','==','Debe'),
+				];
+				if (cliente && cliente.trim()) {
+					qArgs.push(window.where('cliente','==', cliente.trim()));
+				}
+				if (desdeISO) qArgs.push(window.where('fecha','>=', desdeISO));
+				if (hastaISO) qArgs.push(window.where('fecha','<=', hastaISO));
+
+				const qRef = window.query(...qArgs);
+				const snap = await window.getDocs(qRef);
+				snap.forEach(d => datos[neg].push({ id: d.id, ...d.data() }));
+			}
+			setCache(cacheKey, datos);
 			return datos;
 		}
 		
@@ -1820,11 +1887,17 @@
 			  document.getElementById('descripcion').value = '';
 			  mostrarExito();
 
-			  // Refrescar tableros relevantes
-			  try { await actualizarResumen(); } catch(e) {}
-			  try { await actualizarAnalisisPagos(); } catch(e) {}
-			  try { await actualizarAcumulado(); } catch(e) {}
-			  try { await actualizarCuentasPorCobrar(); } catch(e) {}
+			  // ✅ NUEVO: invalidar caché y no disparar cascadas costosas
+			  refreshAfterSave(fecha);  
+			  // (Opcional) refrescar SOLO la vista visible para mejor UX.
+			  // Ejemplo: si estás en la pestaña 'resumen', recarga esa únicamente:
+			  const activeTab = document.querySelector('.content.active')?.id;
+			  try {
+				if (activeTab === 'resumen') await actualizarResumen();
+				else if (activeTab === 'metodos') await actualizarAnalisisPagos();
+				else if (activeTab === 'acumulado') await actualizarAcumulado();
+				// 'informes' recarga bajo demanda
+			  } catch (e) {}
 
 			} catch (error) {
 			  console.error(error);
@@ -1988,21 +2061,19 @@
 		  `;
 		}
 		
-		// === Reemplazar COMPLETO ===
+		// === Reemplaza por completo la función ===
 		async function actualizarResumen() {
-		  const fecha = document.getElementById('fechaFiltro').value;
-		  const soloDeudas = !!document.getElementById('soloDeudas')?.checked;
-		  const excluirDeudasResumen = true;
-		  const datos = await obtenerTodosLosRegistros();
-		  const container = document.getElementById('resumenContent');
-		  let html = '';
+			const fecha = document.getElementById('fechaFiltro').value;
+			const soloDeudas = !!document.getElementById('soloDeudas')?.checked;
+			const excluirDeudasResumen = true;
 
-		  for (const [negocio, registros] of Object.entries(datos)) {
-			// Registros del día (por negocio)
-			const delDia = registros.filter(r => r.fecha === fecha);
+			const datos = await fetchPorDia(fecha, 'Todos'); // <--- NUEVO
+			const container = document.getElementById('resumenContent');
+			let html = '';
 
-			// === BLOQUE NUEVO: cálculo de saldos del día (con o sin deudas) ===
-			const registrosParaSaldos = excluirDeudasResumen
+			for (const [negocio, registros] of Object.entries(datos)) {
+				const delDia = registros; // ya vienen filtrados por fecha
+				const registrosParaSaldos = excluirDeudasResumen
 				? delDia.filter(r =>
 					r.tipo === "movimiento" &&
 					(r.estadoPago === 'Pagado' || r.estadoPago == null) &&
@@ -2010,184 +2081,178 @@
 					)
 				: delDia;
 
-			let ventasEfectivo = 0;
-			let ventasNequi = 0;
-			let totalGastos = 0;
-
-			// Ventas: usar registrosParaSaldos
-			registrosParaSaldos.forEach(r => {
-			  if (r.tipo === "movimiento") {
+				let ventasEfectivo = 0, ventasNequi = 0, totalGastos = 0;
+				registrosParaSaldos.forEach(r => {
 				const v = Number(r.ventas || 0);
 				if (r.metodo === "Efectivo") ventasEfectivo += v;
 				if (r.metodo === "Nequi") ventasNequi += v;
-			  }
-			});
+				});
+				delDia.forEach(r => { if (r.tipo === "movimiento") totalGastos += Number(r.gastos || 0); });
 
-			// Gastos: SIEMPRE sumar del día completo
-			delDia.forEach(r => {
-			  if (r.tipo === "movimiento") {
-				totalGastos += Number(r.gastos || 0);
-			  }
-			});
+				const totalVentas = ventasEfectivo + ventasNequi;
+				const balance = totalVentas - totalGastos;
+				const saldoEfectivo = ventasEfectivo - totalGastos;
+				const saldoNequi = ventasNequi;
 
-			const totalVentas = ventasEfectivo + ventasNequi;
-			const balance = totalVentas - totalGastos;
-			const saldoEfectivo = ventasEfectivo - totalGastos;
-			const saldoNequi = ventasNequi;
+				const registrosParaTabla = soloDeudas
+				? delDia.filter(r =>
+					r.tipo === 'movimiento' &&
+					Number(r.ventas) > 0 &&
+					r.estadoPago === 'Debe'
+					)
+				: delDia;
 
-			// === Tabla del día: respeta el filtro "Solo Deudas" ===
-			const registrosParaTabla = soloDeudas
-			  ? delDia.filter(r =>
-				  r.tipo === 'movimiento' &&
-				  Number(r.ventas) > 0 &&
-				  r.estadoPago === 'Debe'
-				)
-			  : delDia;
-
-			html += `
-			  <div class="business-section">
-				<h4>${nombresNegocios[negocio]}</h4>
-				<div class="summary-grid">
-				  <div class="summary-box">
-					<h4>Ventas</h4>
-					<div class="value" style="color:#007bff;">${COP(totalVentas)}</div>
-				  </div>
-				  <div class="summary-box">
-					<h4>Gastos</h4>
-					<div class="value" style="color:#dc3545;">-${COP(totalGastos)}</div>
-				  </div>
-				  <div class="summary-box" style="border-color:#667eea;background:#f0f4ff;">
-					<h4>Balance del Día</h4>
-					<div class="value" style="color:#667eea;">${COP(balance)}</div>
-				  </div>
+				html += `
+				<div class="business-section">
+					<h4>${nombresNegocios[negocio]}</h4>
+					<div class="summary-grid">
+					<div class="summary-box"><h4>Ventas</h4><div class="value" style="color:#007bff;">${COP(totalVentas)}</div></div>
+					<div class="summary-box"><h4>Gastos</h4><div class="value" style="color:#dc3545;">-${COP(totalGastos)}</div></div>
+					<div class="summary-box" style="border-color:#667eea;background:#f0f4ff;"><h4>Balance del Día</h4><div class="value" style="color:#667eea;">${COP(balance)}</div></div>
+					</div>
+					<hr style="margin:15px 0;">
+					<div style="display:flex;justify-content:space-between;">
+					<div>💵 <strong>Saldo en Efectivo:</strong><br><span style="color:#28a745;font-weight:bold;">${COP(saldoEfectivo)}</span></div>
+					<div>📱 <strong>Saldo en Nequi:</strong><br><span style="color:#007bff;font-weight:bold;">${COP(saldoNequi)}</span></div>
+					</div>
+					${registrosParaTabla.length > 0
+					? `<div class="table-responsive"><table class="tabla-registros">${generarTablaRegistros(registrosParaTabla)}</table></div>`
+					: '<p style="color:#999;margin-top:15px;">No hay registros para esta fecha</p>'}
+					${agruparPlatosPorProducto(registrosParaTabla)}
 				</div>
-				<hr style="margin:15px 0;">
-				<div style="display:flex;justify-content:space-between;">
-				  <div>💵 <strong>Saldo en Efectivo:</strong><br>
-					<span style="color:#28a745;font-weight:bold;">${COP(saldoEfectivo)}</span>
-				  </div>
-				  <div>📱 <strong>Saldo en Nequi:</strong><br>
-					<span style="color:#007bff;font-weight:bold;">${COP(saldoNequi)}</span>
-				  </div>
-				</div>
-				${registrosParaTabla.length > 0
-				  ? `<div class="table-responsive">
-				       <table class="tabla-registros">
-				         ${generarTablaRegistros(registrosParaTabla)}
-				       </table>
-				     </div>`
-				  : '<p style="color:#999;margin-top:15px;">No hay registros para esta fecha</p>'}
-				${agruparPlatosPorProducto(registrosParaTabla)}
-			  </div>
-			`;
-		  }
-
-		  container.innerHTML = html || '<p>No hay datos</p>';
+				`;
+			}
+			container.innerHTML = html || '<p>No hay datos</p>';
 		}
 		
-		// === Reemplazar COMPLETO ===
+		// === Reemplaza por completo la función ===
 		async function actualizarCuentasPorCobrar() {
-		  const container = document.getElementById('cxcContent');
-		  if (!container) return;
+			const container = document.getElementById('cxcContent');
+			if (!container) return;
 
-		  const datos = await obtenerTodosLosRegistros();
+			const datos = await fetchDeudas('Todos'); // <--- NUEVO (solo deudas)
+			const mapaClientes = new Map();
+			let totalGeneral = 0;
+			let totalVentasPendientes = 0;
 
-		  // Agrupar por cliente (todas las fechas, todos los negocios)
-		  const mapaClientes = new Map(); // cliente -> { totalPendiente, cantidadVentas }
-
-		  let totalGeneral = 0;
-		  let totalVentasPendientes = 0;
-
-		  for (const registros of Object.values(datos)) {
-			registros.forEach(r => {
-			  if (r.tipo === 'movimiento' && r.estadoPago === 'Debe') {
+			for (const registros of Object.values(datos)) {
+				registros.forEach(r => {
 				const pendiente = Number((r.montoPendiente != null ? r.montoPendiente : r.ventas) || 0);
 				if (pendiente > 0) {
-				  const cliente = (r.cliente && String(r.cliente).trim()) ? r.cliente.trim() : 'Sin nombre';
-				  const prev = mapaClientes.get(cliente) || { totalPendiente: 0, cantidadVentas: 0 };
-				  prev.totalPendiente += pendiente;
-				  prev.cantidadVentas += 1;
-				  mapaClientes.set(cliente, prev);
-
-				  totalGeneral += pendiente;
-				  totalVentasPendientes += 1;
+					const cliente = (r.cliente && String(r.cliente).trim()) ? r.cliente.trim() : 'Sin nombre';
+					const prev = mapaClientes.get(cliente) || { totalPendiente: 0, cantidadVentas: 0 };
+					prev.totalPendiente += pendiente;
+					prev.cantidadVentas += 1;
+					mapaClientes.set(cliente, prev);
+					totalGeneral += pendiente;
+					totalVentasPendientes += 1;
 				}
-			  }
-			});
-		  }
+				});
+			}
 
-		  // Orden por mayor deuda
-		  const filas = [...mapaClientes.entries()]
-			.sort((a, b) => b[1].totalPendiente - a[1].totalPendiente)
-			.map(([cliente, info]) => {
-			  const clienteSafe = cliente.replace(/'/g, "\\'");
-			  return `
+			const filas = [...mapaClientes.entries()]
+				.sort((a,b) => b[1].totalPendiente - a[1].totalPendiente)
+				.map(([cliente, info]) => `
 				<tr>
-				  <td>${cliente}</td>
-				  <td style="text-align:center;">${info.cantidadVentas}</td>
-				  <td style="text-align:right;">${COP(info.totalPendiente)}</td>
-				  <td style="text-align:center;">
-					<button class="btn-success" type="button"
-					  onclick="abrirModalCobroCliente('${clienteSafe}', ${info.totalPendiente})">
-					  Cobrar
+					<td>${cliente}</td>
+					<td style="text-align:center;">${info.cantidadVentas}</td>
+					<td style="text-align:right;">${COP(info.totalPendiente)}</td>
+					<td style="text-align:center;">
+					<button class="btn-success" type="button" onclick="abrirModalCobroCliente('${cliente.replace(/'/g,"\\'")}', ${info.totalPendiente})">
+						Cobrar
 					</button>
-				  </td>
+					</td>
 				</tr>
-			  `;
-			}).join('');
+				`).join('');
 
-		  const clientesUnicos = mapaClientes.size;
-
-		  const html = `
-			<div class="business-section" style="border-left-color:#dc3545;">
-			  <h3>💳 Cuentas por Cobrar (Acumulado)</h3>
-			  <div class="summary-grid">
-				<div class="summary-box">
-				  <h4>Total por Cobrar</h4>
-				  <div class="value" style="color:#dc3545;">${COP(totalGeneral)}</div>
+			const clientesUnicos = mapaClientes.size;
+			container.innerHTML = `
+				<div class="business-section" style="border-left-color:#dc3545;">
+				<h3>💳 Cuentas por Cobrar (Acumulado)</h3>
+				<div class="summary-grid">
+					<div class="summary-box"><h4>Total por Cobrar</h4><div class="value" style="color:#dc3545;">${COP(totalGeneral)}</div></div>
+					<div class="summary-box"><h4>Clientes con deuda</h4><div class="value">${clientesUnicos}</div></div>
+					<div class="summary-box"><h4>Ventas pendientes</h4><div class="value">${totalVentasPendientes}</div></div>
 				</div>
-				<div class="summary-box">
-				  <h4>Clientes con deuda</h4>
-				  <div class="value">${clientesUnicos}</div>
+				${ clientesUnicos > 0
+					? `<table>
+						<thead><tr><th>Cliente</th><th style="width:140px;"># Ventas</th><th style="width:200px;">Total Pendiente (COP)</th><th style="width:140px;">Acciones</th></tr></thead>
+						<tbody>${filas}</tbody>
+					</table>`
+					: '<p style="color:#28a745;margin-top:10px;">No hay deudas pendientes. ✅</p>'
+				}
 				</div>
-				<div class="summary-box">
-				  <h4>Ventas pendientes</h4>
-				  <div class="value">${totalVentasPendientes}</div>
-				</div>
-			  </div>
-
-			  ${
-				clientesUnicos > 0
-				? `
-				  <table>
-					<thead>
-					  <tr>
-						<th>Cliente</th>
-						<th style="width:140px;"># Ventas</th>
-						<th style="width:200px;">Total Pendiente (COP)</th>
-						<th style="width:140px;">Acciones</th>
-					  </tr>
-					</thead>
-					<tbody>
-					  ${filas}
-					</tbody>
-				  </table>
-				`
-				: '<p style="color:#28a745;margin-top:10px;">No hay deudas pendientes. ✅</p>'
-			  }
-			</div>
-		  `;
-
-		  container.innerHTML = html;
+			`;
 		}
 		
 		//modal por cliente
 		let clienteACobrar = null;
 		let deudaClienteActual = 0;
 
-		function abrirModalCobroCliente(cliente, deuda) {
+		async function abrirModalCobroCliente(cliente, deuda, negocioKey = null) {
 		  clienteACobrar = cliente;
 		  deudaClienteActual = Number(deuda) || 0;
+
+		  // guarda el filtro de negocio si lo recibes (Negocio1|Negocio2|...)
+		  window.filtroNegocioCobroCliente = negocioKey; // puede ser null -> 'Todos'
+
+		  const sel = document.getElementById('negocioCobroCliente');
+		  if (sel) {
+				try {
+					// 1) Traer deudas del cliente en TODOS los negocios (ya filtra por cliente en la query)
+					const datos = await fetchDeudas('Todos', { cliente: clienteACobrar });
+
+					// 2) Determinar en cuáles negocios hay pendiente > 0
+					const negociosConDeuda = [];
+					for (const [negKey, regs] of Object.entries(datos)) {
+						const tiene = regs.some(r => {
+							const pendiente = Number((r.montoPendiente != null ? r.montoPendiente : r.ventas) || 0);
+							return pendiente > 0;
+						});
+						if (tiene) negociosConDeuda.push(negKey);
+					}
+
+					// 3) Reconstruir las opciones del select
+					sel.innerHTML = '';
+					if (negociosConDeuda.length === 0) {
+						// (Caso raro si viniste desde botón Cobrar: no hay deudas)
+						const opt = document.createElement('option');
+						opt.value = '';
+						opt.textContent = 'Todos';
+						sel.appendChild(opt);
+						sel.disabled = true;
+						window.filtroNegocioCobroCliente = null;
+					} else if (negociosConDeuda.length === 1) {
+						// Solo un negocio → fijar y bloquear selector
+						const only = negociosConDeuda[0];
+						const opt = document.createElement('option');
+						opt.value = only;
+						opt.textContent = nombresNegocios[only] || only;
+						sel.appendChild(opt);
+						sel.value = only;
+						sel.disabled = true;
+						window.filtroNegocioCobroCliente = only;
+					} else {
+						// Varios negocios → incluir 'Todos' al inicio
+						const optTodos = document.createElement('option');
+						optTodos.value = '';
+						optTodos.textContent = 'Todos';
+						sel.appendChild(optTodos);
+						negociosConDeuda.forEach(negKeyIt => {
+							const opt = document.createElement('option');
+							opt.value = negKeyIt;
+							opt.textContent = nombresNegocios[negKeyIt] || negKeyIt;
+							sel.appendChild(opt);
+						});
+						sel.disabled = false;
+						sel.value = negocioKey || '';
+						window.filtroNegocioCobroCliente = negocioKey || null;
+					}
+				} catch (e) {
+						console.warn('No se pudo poblar el selector de negocio por cliente:', e);
+						// Si hay error, deja el select como esté y no bloquees el modal
+					}
+		   	}
 
 		  document.getElementById('cxcClienteNombre').textContent = clienteACobrar;
 		  document.getElementById('cxcClienteDeuda').textContent = COP(deudaClienteActual);
@@ -2260,29 +2325,40 @@
 				return;
 			  }
 			}
+			
 
 			// Cargar todas las ventas "Debe" del cliente (de todos los negocios)
-			const datos = await obtenerTodosLosRegistros();
+			// Cargar ventas "Debe" del cliente (de todos los negocios) SIN escanear toda la colección
+			const sel = document.getElementById('negocioCobroCliente');
+			const negocioFiltro = (sel && sel.value) ? sel.value : (window.filtroNegocioCobroCliente || 'Todos');
+			const datos = await fetchDeudas(negocioFiltro, { cliente: clienteACobrar }); // cliente negocio si aplica
 			const deudas = [];
 			for (const regs of Object.values(datos)) {
-			  regs.forEach(r => {
-				const cliente = (r.cliente && String(r.cliente).trim()) ? r.cliente.trim() : 'Sin nombre';
-				if (
-				  r.tipo === 'movimiento' &&
-				  r.estadoPago === 'Debe' &&
-				  cliente === clienteACobrar
-				) {
-				  const pendiente = Number((r.montoPendiente != null ? r.montoPendiente : r.ventas) || 0);
-				  if (pendiente > 0) {
-					deudas.push({ ...r, pendiente });
-				  }
-				}
-			  });
+				regs.forEach(r => {
+					const cliente = (r.cliente && String(r.cliente).trim()) ? r.cliente.trim() : 'Sin nombre';
+					if (r.tipo === 'movimiento' && cliente === clienteACobrar) {
+					const pendiente = Number((r.montoPendiente != null ? r.montoPendiente : r.ventas) || 0);
+					if (pendiente > 0) deudas.push({ ...r, pendiente });
+					}
+				});
 			}
 
 			if (deudas.length === 0) {
 			  err.textContent = '✗ No hay deudas pendientes para este cliente.'; err.style.display = 'block';
 			  return;
+			}
+
+			// 🔒 Validación adicional para "Pago parcial" cuando hay filtro por negocio
+			if (tipo === 'parcial') {
+				const totalPendienteFiltro = deudas.reduce((s, r) => s + Number(r.pendiente || 0), 0);
+				if (montoParcial > totalPendienteFiltro) {
+					err.textContent = `✗ El monto parcial (${COP(montoParcial)}) excede el pendiente del negocio seleccionado (${COP(totalPendienteFiltro)}). ` +
+									`Elige "Todos" o reduce el monto.`;
+					err.style.display = 'block';
+					return;
+				}
+				const input = document.getElementById('montoParcial');
+				if (input) input.max = String(totalPendienteFiltro);
 			}
 
 			// Orden FIFO: por createdAt (si existe) o por fecha
@@ -2387,234 +2463,237 @@
 		
         // Actualizar cuentas acumuladas
         async function actualizarAcumulado() {
+			// “Acumulado” = desde un origen muy antiguo hasta hoy
+			const datos = await fetchPorRango('2000-01-01', hoyLocalISO(), 'Todos');
 
-			const datos = await obtenerTodosLosRegistros();
 			const container = document.getElementById('acumuladoContent');
 			let html = '';
 
 			for (const [negocio, registros] of Object.entries(datos)) {
+				// Saldos iniciales (informativos para este tablero)
+				let saldoEfectivo = Number(saldoInicial[negocio]?.efectivo || 0);
+				let saldoNequi    = Number(saldoInicial[negocio]?.nequi || 0);
 
-			  // Saldos iniciales
-			  let saldoEfectivo = Number(saldoInicial[negocio]?.efectivo || 0);
-			  let saldoNequi   = Number(saldoInicial[negocio]?.nequi || 0);
-
-			  // 1) Ventas de productos (NO contar abonos)
-			  //    - r.ventas > 0
-			  //    - debe tener 'producto' (los abonos no lo tienen)
-			  //    - excluir si viene marcado como abono (flag) o por descripción
-			  const totalVentasProductos = registros.reduce((sum, r) => {
-				const esMovimiento = r.tipo === 'movimiento';
-				const esVenta      = Number(r.ventas || 0) > 0;
+				// Ventas de productos (NO abonos) – solo info
+				const totalVentasProductos = registros.reduce((sum, r) => {
+				const esMov = r.tipo === 'movimiento';
+				const esVenta = Number(r.ventas || 0) > 0;
 				const tieneProducto = !!r.producto;
-				const esAbonoFlag  = r.esAbono === true;
-				const esAbonoPorDescripcion = typeof r.descripcion === 'string' &&
-				  r.descripcion.toLowerCase().includes('cobro parcial');
+				const esAbono = r.esAbono === true ||
+					(typeof r.descripcion === 'string' && r.descripcion.toLowerCase().includes('cobro parcial'));
+				return (esMov && esVenta && tieneProducto && !esAbono)
+					? sum + Number(r.ventas || 0)
+					: sum;
+				}, 0);
 
-				if (esMovimiento && esVenta && tieneProducto && !esAbonoFlag && !esAbonoPorDescripcion) {
-				  return sum + Number(r.ventas || 0);
-				}
+				// Gastos totales
+				const totalGastos = registros.reduce((sum, r) => {
+				if (r.tipo === 'movimiento') return sum + Number(r.gastos || 0);
 				return sum;
-			  }, 0);
+				}, 0);
 
-			  // 2) Gastos totales (da igual si el doc es abono u otro, abonos traen gastos=0)
-			  const totalGastos = registros.reduce((sum, r) => {
-				if (r.tipo === 'movimiento') {
-				  return sum + Number(r.gastos || 0);
-				}
-				return sum;
-			  }, 0);
-
-			  // 3) Flujos reales por método → (ventas pagadas + abonos) - gastos
-			  //    - Esto mantiene abonos como ENTRADAS de efectivo/nequi, que es correcto
-			  registros.forEach(r => {
+				// Flujos reales por método (ventas pagadas + abonos) - gastos
+				registros.forEach(r => {
 				if (r.tipo !== 'movimiento') return;
-				if (r.excluirDeAnalisis === true) return; // evita duplicar originales saldados
+				if (r.excluirDeAnalisis === true) return;
 				const v = Number(r.ventas || 0);
 				const g = Number(r.gastos || 0);
+				if (r.metodo === 'Efectivo') saldoEfectivo += v - g;
+				if (r.metodo === 'Nequi')    saldoNequi    += v - g;
+				});
 
-				if (r.metodo === "Efectivo") {
-				  saldoEfectivo += v - g;
-				} else if (r.metodo === "Nequi") {
-				  saldoNequi += v - g;
-				}
-			  });
+				const saldoTotal = saldoEfectivo + saldoNequi;
 
-			  const saldoTotal = saldoEfectivo + saldoNequi;
-
-			  html += `
+				html += `
 				<div class="summary-box">
-				  <h4>${nombresNegocios[negocio]}</h4>
-				  <p><strong>Capital Inicial:</strong> ${COP((saldoInicial[negocio]?.efectivo || 0) + (saldoInicial[negocio]?.nequi || 0))}</p>
-				  <p><strong>Ventas Totales:</strong> ${COP(totalVentasProductos)}</p>
-				  <p><strong>Gastos Totales:</strong> -${COP(totalGastos)}</p>
-				  <hr>
-				  <p><strong>Saldo Total Real:</strong> ${COP(saldoTotal)}</p>
-				  <hr>
-				  <p>💵 Saldo Efectivo: ${COP(saldoEfectivo)}</p>
-				  <p>📱 Saldo Nequi: ${COP(saldoNequi)}</p>
+					<h4>${nombresNegocios[negocio]}</h4>
+					<p><strong>Capital Inicial:</strong> ${COP((saldoInicial[negocio]?.efectivo || 0) + (saldoInicial[negocio]?.nequi || 0))}</p>
+					<p><strong>Ventas Totales:</strong> ${COP(totalVentasProductos)}</p>
+					<p><strong>Gastos Totales:</strong> -${COP(totalGastos)}</p>
+					<hr>
+					<p><strong>Saldo Total Real:</strong> ${COP(saldoTotal)}</p>
+					<hr>
+					<p>💵 Saldo Efectivo: ${COP(saldoEfectivo)}</p>
+					<p>📱 Saldo Nequi: ${COP(saldoNequi)}</p>
 				</div>
-			  `;
+				`;
 			}
 
 			container.innerHTML = html;
 		}
 
-		// === Reemplazar COMPLETO ===
+		// === Reemplaza COMPLETAMENTE tu función por esta ===
 		async function actualizarAnalisisPagos() {
+			// Filtros y referencias a elementos
 			const negocioFiltro = document.getElementById('negocioFiltro').value;
-			const filtroFecha = document.getElementById('filtroFechaPagos').value;
+			const filtroFecha   = document.getElementById('filtroFechaPagos').value; // 'fecha' | 'acumulado'
 			const incluirInicial = !!document.getElementById('toggleCapitalInicial')?.checked;
 
-			const datos = await obtenerTodosLosRegistros();
-			const container = document.getElementById('analisisPagosContent');
-			const fechaPagosContainer = document.getElementById('fechaPagosContainer');
+			const container            = document.getElementById('analisisPagosContent');
+			const fechaPagosContainer  = document.getElementById('fechaPagosContainer');
 
 			// Mostrar/ocultar selector de fecha
 			if (filtroFecha === 'fecha') {
-			fechaPagosContainer.style.display = 'block';
-			if (!document.getElementById('fechaSeleccionadaPagos').value) {
-				document.getElementById('fechaSeleccionadaPagos').value = hoyLocalISO();
-			}
+				fechaPagosContainer.style.display = 'block';
+				const inputFecha = document.getElementById('fechaSeleccionadaPagos');
+				if (!inputFecha.value) {
+				inputFecha.value = hoyLocalISO();
+				}
 			} else {
-			fechaPagosContainer.style.display = 'none';
+				fechaPagosContainer.style.display = 'none';
 			}
 
-			const fechaSeleccionada = document.getElementById('fechaSeleccionadaPagos').value;
+			// === Carga de datos optimizada (sin traer toda la colección) ===
+			let datos; // { Negocio1:[], Negocio2:[], ... }
+			if (filtroFecha === 'fecha') {
+				const f = document.getElementById('fechaSeleccionadaPagos').value;
+				datos = await fetchPorDia(f, (negocioFiltro === 'Todos' ? 'Todos' : negocioFiltro));
+			} else {
+				// Acumulado hasta hoy. Si tu histórico es muy grande, podrías limitar a 60-90 días.
+				const desde = '2000-01-01';
+				const hasta = hoyLocalISO();
+				datos = await fetchPorRango(desde, hasta, (negocioFiltro === 'Todos' ? 'Todos' : negocioFiltro));
+			}
 
+			// Qué negocios mostrar
 			const negocios = (negocioFiltro === 'Todos') ? Object.keys(datos) : [negocioFiltro];
 
-			// Totales globales (saldos reales)
+			// Totales globales (para la banda superior)
 			let totalGlobalEfectivo = 0;
-			let totalGlobalNequi = 0;
+			let totalGlobalNequi    = 0;
 
-			let html = '';
+			let htmlPorNegocio = '';
 
 			for (const negocio of negocios) {
-			let registros = datos[negocio] || [];
+				// Cada "registros" ya viene filtrado (por día o por rango) desde Firestore
+				let registros = datos[negocio] || [];
 
-			// Filtro por fecha (opcional)
-			if (filtroFecha === 'fecha') {
+				// Si el modo es 'fecha', por seguridad filtramos por el valor seleccionado (aunque ya venga filtrado del back)
+				if (filtroFecha === 'fecha') {
+				const fechaSeleccionada = document.getElementById('fechaSeleccionadaPagos').value;
 				registros = registros.filter(r => r.fecha === fechaSeleccionada);
-			}
+				}
 
-			// Ventas pagadas por método (excluye originales marcados para no duplicar)
-			const ventasPagadasEfectivo = registros
-			  .filter(r =>
-				r.tipo === 'movimiento' &&
-				Number(r.ventas) > 0 &&
-				r.metodo === 'Efectivo' &&
-				(r.estadoPago === 'Pagado' || r.estadoPago == null) &&
-				r.excluirDeAnalisis !== true
-			  )
-			  .reduce((sum, r) => sum + (Number(r.ventas) || 0), 0);
+				// --- Cálculos por método (ventas pagadas y gastos) ---
+				const ventasPagadasEfectivo = registros
+				.filter(r =>
+					r.tipo === 'movimiento' &&
+					Number(r.ventas) > 0 &&
+					r.metodo === 'Efectivo' &&
+					(r.estadoPago === 'Pagado' || r.estadoPago == null) &&
+					r.excluirDeAnalisis !== true
+				)
+				.reduce((sum, r) => sum + (Number(r.ventas) || 0), 0);
 
-			const ventasPagadasNequi = registros
-			  .filter(r =>
-				r.tipo === 'movimiento' &&
-				Number(r.ventas) > 0 &&
-				r.metodo === 'Nequi' &&
-				(r.estadoPago === 'Pagado' || r.estadoPago == null) &&
-				r.excluirDeAnalisis !== true
-			  )
-			  .reduce((sum, r) => sum + (Number(r.ventas) || 0), 0);
+				const ventasPagadasNequi = registros
+				.filter(r =>
+					r.tipo === 'movimiento' &&
+					Number(r.ventas) > 0 &&
+					r.metodo === 'Nequi' &&
+					(r.estadoPago === 'Pagado' || r.estadoPago == null) &&
+					r.excluirDeAnalisis !== true
+				)
+				.reduce((sum, r) => sum + (Number(r.ventas) || 0), 0);
 
-			// Gastos por método
-			const gastosEfectivo = registros
+				const gastosEfectivo = registros
 				.filter(r => r.tipo === 'movimiento' && Number(r.gastos) > 0 && r.metodo === 'Efectivo')
 				.reduce((sum, r) => sum + (Number(r.gastos) || 0), 0);
 
-			const gastosNequi = registros
+				const gastosNequi = registros
 				.filter(r => r.tipo === 'movimiento' && Number(r.gastos) > 0 && r.metodo === 'Nequi')
 				.reduce((sum, r) => sum + (Number(r.gastos) || 0), 0);
 
-			// Capital inicial por método (opcional, toggle)
-			const inicialEfectivo = incluirInicial ? (saldoInicial[negocio]?.efectivo || 0) : 0;
-			const inicialNequi = incluirInicial ? (saldoInicial[negocio]?.nequi || 0) : 0;
+				// Capital inicial (opcional, controlado por el toggle)
+				const inicialEfectivo = incluirInicial ? (saldoInicial[negocio]?.efectivo || 0) : 0;
+				const inicialNequi    = incluirInicial ? (saldoInicial[negocio]?.nequi    || 0) : 0;
 
-			// Saldos reales por método
-			const saldoEfectivo = inicialEfectivo + ventasPagadasEfectivo - gastosEfectivo;
-			const saldoNequi = inicialNequi + ventasPagadasNequi - gastosNequi;
-			const totalSaldo = saldoEfectivo + saldoNequi;
+				// Saldos reales por método
+				const saldoEfectivo = inicialEfectivo + ventasPagadasEfectivo - gastosEfectivo;
+				const saldoNequi    = inicialNequi    + ventasPagadasNequi    - gastosNequi;
+				const totalSaldo    = saldoEfectivo + saldoNequi;
 
-			totalGlobalEfectivo += saldoEfectivo;
-			totalGlobalNequi += saldoNequi;
+				// Suma a los globales
+				totalGlobalEfectivo += saldoEfectivo;
+				totalGlobalNequi    += saldoNequi;
 
-			const pctEfectivo = totalSaldo > 0 ? ((saldoEfectivo / totalSaldo) * 100).toFixed(1) : 0;
-			const pctNequi = totalSaldo > 0 ? ((saldoNequi / totalSaldo) * 100).toFixed(1) : 0;
+				const pctEfectivo = totalSaldo > 0 ? ((saldoEfectivo / totalSaldo) * 100).toFixed(1) : 0;
+				const pctNequi    = totalSaldo > 0 ? ((saldoNequi    / totalSaldo) * 100).toFixed(1) : 0;
 
-			html += `
+				// --- Render por negocio (mismo look & feel que tu versión) ---
+				htmlPorNegocio += `
 				<div class="business-section">
-				<h4>${nombresNegocios[negocio]}</h4>
-				<div class="summary-grid">
-					<div class="summary-box">
-					<h4>💵 Saldo en Efectivo</h4>
-					<div class="value">${COP(saldoEfectivo)}</div>
-					<p style="color:#666;margin-top:10px;">${pctEfectivo}%</p>
-					</div>
-					<div class="summary-box">
-					<h4>📱 Saldo en Nequi</h4>
-					<div class="value">${COP(saldoNequi)}</div>
-					<p style="color:#666;margin-top:10px;">${pctNequi}%</p>
-					</div>
-					<div class="summary-box">
-					<h4>💰 Total Saldos</h4>
-					<div class="value">${COP(totalSaldo)}</div>
-					</div>
-				</div>
+					<h4>${nombresNegocios[negocio]}</h4>
 
-				<div class="summary-card" style="margin-top:10px;">
+					<div class="summary-grid">
+					<div class="summary-box">
+						<h4>💵 Saldo en Efectivo</h4>
+						<div class="value">${COP(saldoEfectivo)}</div>
+						<p style="color:#666;margin-top:10px;">${pctEfectivo}%</p>
+					</div>
+					<div class="summary-box">
+						<h4>📱 Saldo en Nequi</h4>
+						<div class="value">${COP(saldoNequi)}</div>
+						<p style="color:#666;margin-top:10px;">${pctNequi}%</p>
+					</div>
+					<div class="summary-box">
+						<h4>💰 Total Saldos</h4>
+						<div class="value">${COP(totalSaldo)}</div>
+					</div>
+					</div>
+
+					<div class="summary-card" style="margin-top:10px;">
 					<h3>Detalle</h3>
 					<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
-					<div>
+						<div>
 						<strong>Inicial Efectivo:</strong> ${COP(inicialEfectivo)}<br>
 						<strong>Ventas (Pagadas) Efectivo:</strong> ${COP(ventasPagadasEfectivo)}<br>
 						<strong>Gastos en Efectivo:</strong> -${COP(gastosEfectivo)}
-					</div>
-					<div>
+						</div>
+						<div>
 						<strong>Inicial Nequi:</strong> ${COP(inicialNequi)}<br>
 						<strong>Ventas (Pagadas) Nequi:</strong> ${COP(ventasPagadasNequi)}<br>
 						<strong>Gastos en Nequi:</strong> -${COP(gastosNequi)}
+						</div>
 					</div>
 					</div>
 				</div>
-				</div>
-			`;
+				`;
 			}
 
+			// Bloque superior (global)
 			const totalGlobal = totalGlobalEfectivo + totalGlobalNequi;
 			const pctGlobalEfectivo = totalGlobal > 0 ? ((totalGlobalEfectivo / totalGlobal) * 100).toFixed(1) : 0;
-			const pctGlobalNequi = totalGlobal > 0 ? ((totalGlobalNequi / totalGlobal) * 100).toFixed(1) : 0;
+			const pctGlobalNequi    = totalGlobal > 0 ? ((totalGlobalNequi    / totalGlobal) * 100).toFixed(1) : 0;
 
 			const baseTitulo = (filtroFecha === 'fecha')
-			? `SALDOS DEL DÍA (${document.getElementById('fechaSeleccionadaPagos').value})`
-			: 'SALDOS TOTALES (Acumulado)';
+				? `SALDOS DEL DÍA (${document.getElementById('fechaSeleccionadaPagos').value})`
+				: 'SALDOS TOTALES (Acumulado)';
 
 			const resumenTitulo = incluirInicial ? `${baseTitulo} — (incluye capital inicial)` : baseTitulo;
 
-			let htmlFinal = `
-			<div class="business-section" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none;">
+			const headerHTML = `
+				<div class="business-section" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none;">
 				<h4 style="color: white; text-align: center; margin-bottom: 20px; font-size: 1.1em;">${resumenTitulo}</h4>
 				<div class="summary-grid">
-				<div class="summary-box" style="background: rgba(255,255,255,0.95); border: none;">
+					<div class="summary-box" style="background: rgba(255,255,255,0.95); border: none;">
 					<h4 style="color: #28a745;">💵 Saldo Efectivo</h4>
 					<div class="value" style="color: #28a745;">${COP(totalGlobalEfectivo)}</div>
 					<p style="color: #666; margin-top: 10px; font-weight: bold;">${pctGlobalEfectivo}%</p>
-				</div>
-				<div class="summary-box" style="background: rgba(255,255,255,0.95); border: none;">
+					</div>
+					<div class="summary-box" style="background: rgba(255,255,255,0.95); border: none;">
 					<h4 style="color: #007bff;">📱 Saldo Nequi</h4>
 					<div class="value" style="color: #007bff;">${COP(totalGlobalNequi)}</div>
 					<p style="color: #666; margin-top: 10px; font-weight: bold;">${pctGlobalNequi}%</p>
-				</div>
-				<div class="summary-box" style="background: rgba(255,255,255,0.95); border: none;">
+					</div>
+					<div class="summary-box" style="background: rgba(255,255,255,0.95); border: none;">
 					<h4 style="color: #667eea;">💰 Total General</h4>
 					<div class="value" style="color: #667eea;">${COP(totalGlobal)}</div>
+					</div>
 				</div>
 				</div>
-			</div>
 			`;
 
-			htmlFinal += html;
-			container.innerHTML = htmlFinal || '<p>No hay datos de pagos</p>';
+			container.innerHTML = (headerHTML + htmlPorNegocio) || '<p>No hay datos de pagos</p>';
 		}
 		
 		// === Reemplazar COMPLETO ===
@@ -2841,7 +2920,7 @@
 		
         // Exportar datos
         async function exportarDatos() {
-			const datos = await obtenerTodosLosRegistros();
+			const datos = await fetchPorRango('2000-01-01', hoyLocalISO(), 'Todos');
 			
 			// Crear nuevo objeto con nombres reales
 			const datosFormateados = {};
@@ -2862,7 +2941,7 @@
 
         // Descargar Excel (actualizado correctamente)
 		async function descargarExcel() {
-		  const datos = await obtenerTodosLosRegistros();
+		  const datos = await fetchPorRango('2000-01-01', hoyLocalISO(), 'Todos');
 		  let csv = 'Negocio,Fecha,Producto,Tipo Corriente,Cantidad,Precio Unitario,Ventas,Gastos,Método,Estado Pago,Cliente,Descripción\n';
 		  for (const [negocio, registros] of Object.entries(datos)) {
 			registros.forEach(r => {
@@ -2910,14 +2989,16 @@
         }
 
         // Actualizar total de registros
-        async function actualizarTotalRegistros() {
-            const datos = await obtenerTodosLosRegistros();
-            let total = 0;
-            for (const registros of Object.values(datos)) {
-                total += registros.length;
-            }
-            document.getElementById('totalRegistros').textContent = total;
-        }
+        // Requiere exponer getCountFromServer en <script type="module"> como window.getCountFromServer
+		async function actualizarTotalRegistros() {
+			try {
+				const q = window.query(window.collection(window.db, 'registros'));
+				const snap = await window.getCountFromServer(q);
+				document.getElementById('totalRegistros').textContent = snap.data().count || 0;
+			} catch (e) {
+				console.warn('No se pudo obtener el conteo agregado; omito para evitar lecturas grandes.', e);
+			}
+		}
         
 		// Productos y cálculo
 		document.getElementById("business").addEventListener("change", cargarProductos);
@@ -2981,51 +3062,59 @@
 
 			if (tabName === 'informes') {
 				try {
-				// ===== (1) INFORME MENSUAL =====
-				const mesEl = document.getElementById('mesReporte');
-				if (mesEl && !mesEl.value) {
-					const d = new Date();
-					const y = d.getFullYear();
-					const m = String(d.getMonth() + 1).padStart(2, '0');
-					mesEl.value = `${y}-${m}`;
-				}
-				await previsualizarInforme(); // mensual
-
-				// ===== (2) RESUMEN POR PERÍODO =====
-				const desdePeriodoEl = document.getElementById('infDesdePeriodo');
-				const hastaPeriodoEl = document.getElementById('infHastaPeriodo');
-				if (desdePeriodoEl && !desdePeriodoEl.value) desdePeriodoEl.value = primerDiaMesActualISO();
-				if (hastaPeriodoEl && !hastaPeriodoEl.value) hastaPeriodoEl.value = hoyLocalISO();
-
-				// Si tienes el selector de negocio del período, no hace falta setear aquí.
-				await previsualizarPeriodoInforme();     // tabla + kpis del período
-				await renderCxcPeriodoEnInformes();      // CxC (acumulado o del período)
-
-				// ===== (3) BALANCE GENERAL (si ya lo agregaste) =====
-				// Seteo por defecto: fecha de corte = hoy
-				const bgCorteEl = document.getElementById('bgFechaCorte');
-				if (typeof previsualizarBalanceGeneral === 'function' && bgCorteEl) {
-					if (!bgCorteEl.value) bgCorteEl.value = hoyLocalISO();
-					await previsualizarBalanceGeneral();
-				}
-
-				// ===== (4) ESTADO DE RESULTADOS (P&L) =====
-				// Defaults: primer día del mes a hoy
-				const desdePL = document.getElementById('plDesde');
-				const hastaPL = document.getElementById('plHasta');
-				if (desdePL && !desdePL.value) desdePL.value = primerDiaMesActualISO();
-				if (hastaPL && !hastaPL.value) hastaPL.value = hoyLocalISO();
-
-				// Primera carga de P&L
-				if (typeof previsualizarPL === 'function') {
-					await previsualizarPL();
-				}
-				} catch (e) {
-				console.warn(e);
-				}
-				
+					// [Eliminado] llamadas inmediatas a todos los informes
+					// Lazy-load: se cargan al abrir cada <details> por primera vez (ver listeners abajo)
+				} catch (e) { console.warn(e); }
 				restoreInformesState();
 				initInformesAccordionHotkeys();
+				// === Listeners de carga perezosa ===
+				const mensual = document.getElementById('secMensual');
+				const periodo = document.getElementById('secPeriodo');
+				const pl      = document.getElementById('secPL');
+				if (mensual && !mensual.__wired) {
+					mensual.__wired = true;
+					mensual.addEventListener('toggle', async () => {
+					if (mensual.open && !mensual.__loaded) {
+						const mesEl = document.getElementById('mesReporte');
+						if (mesEl && !mesEl.value) {
+						const d = new Date(); const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,'0');
+						mesEl.value = `${y}-${m}`;
+						}
+						await previsualizarInforme();
+						mensual.__loaded = true;
+					}
+					});
+					if (mensual.open) mensual.dispatchEvent(new Event('toggle'));
+				}
+				if (periodo && !periodo.__wired) {
+					periodo.__wired = true;
+					periodo.addEventListener('toggle', async () => {
+						if (periodo.open && !periodo.__loaded) {
+						const dEl = document.getElementById('infDesdePeriodo');
+						const hEl = document.getElementById('infHastaPeriodo');
+						if (dEl && !dEl.value) dEl.value = primerDiaMesActualISO();
+						if (hEl && !hEl.value) hEl.value = hoyLocalISO();
+						await previsualizarPeriodoInforme();
+						await renderCxcPeriodoEnInformes();
+						periodo.__loaded = true;
+						}
+					});
+					if (periodo.open) periodo.dispatchEvent(new Event('toggle'));
+				}
+				if (pl && !pl.__wired) {
+					pl.__wired = true;
+					pl.addEventListener('toggle', async () => {
+						if (pl.open && !pl.__loaded) {
+						const dp = document.getElementById('plDesde');
+						const hp = document.getElementById('plHasta');
+						if (dp && !dp.value) dp.value = primerDiaMesActualISO();
+						if (hp && !hp.value) hp.value = hoyLocalISO();
+						await previsualizarPL();
+						pl.__loaded = true;
+						}
+					});
+					if (pl.open) pl.dispatchEvent(new Event('toggle'));
+				}
 			}
 		}
 		
@@ -3100,12 +3189,6 @@
 
 			cerrarModalCobrar();
 			mostrarExito();
-
-			// Refrescar vistas
-			try { await actualizarResumen(); } catch(e) {}
-			try { await actualizarAnalisisPagos(); } catch(e) {}
-			try { await actualizarAcumulado(); } catch(e) {}
-			try { await actualizarCuentasPorCobrar(); } catch(e) {}
 
 			} catch (e) {
 			console.error(e);
@@ -3322,14 +3405,28 @@
 			return result;
 		}
 
+		function monthRangeFromYYYYMM(yyyyMM){
+			const [y, m] = yyyyMM.split('-').map(Number);
+			const desde = `${yyyyMM}-01`;
+			const hasta = `${y}-${String(m).padStart(2,'0')}-${String(new Date(y, m, 0).getDate()).padStart(2,'0')}`;
+			return { desde, hasta };
+		}
+
 		// Previsualización simple en pantalla (HTML)
 		async function previsualizarInforme() {
 			const yyyyMM = getYYYYMMFromInput();
 			if (!yyyyMM) { mostrarError('Selecciona un mes válido (YYYY-MM).'); return; }
 
 			const negocioSel = document.getElementById('negocioReporte')?.value || 'Todos';
-			const datos = await obtenerTodosLosRegistros();
+
+			const { desde: primerDia, hasta: ultimoDia } = monthRangeFromYYYYMM(yyyyMM);
+
+			// 🔹 Cargar solo el rango del mes (evita traer todo)
+			const datos = await fetchPorRango(primerDia, ultimoDia, negocioSel);
+
+			// Construye el resumen mensual (tus KPIs)
 			const resumen = construirResumenMensual(datos, yyyyMM, negocioSel);
+
 			const cont = document.getElementById('previewInforme');
 
 			// Render muy ligero: tabla resumen por negocio
@@ -3338,12 +3435,12 @@
 				<h4>Resumen - ${nombreMes(yyyyMM)} (${negocioSel === 'Todos' ? 'Todos los negocios' : (nombresNegocios[negocioSel]||negocioSel)})</h4>
 				<table>
 					<thead>
-						<tr>
-							<th>Negocio</th>
-							<th>Ventas (caja)</th>
-							<th>Gastos</th>
-							<th>Balance</th>
-						</tr>
+					<tr>
+						<th>Negocio</th>
+						<th>Ventas (caja)</th>
+						<th>Gastos</th>
+						<th>Balance</th>
+					</tr>
 					</thead>
 					<tbody>
 			`;
@@ -3370,7 +3467,7 @@
 				</div>
 			`;
 
-			// ⬇⬇ AQUÍ insertamos la sección de CxC (después de "Totales") ⬇⬇
+			// ⬇⬇ Sección de CxC (después de "Totales") ⬇⬇
 			for (const [neg, info] of Object.entries(resumen.negocios)) {
 				const c = info.cxc || { originadoMes:0, abonosAplicadosMes:0, pendienteOriginadoMes:0, pendienteTotalAcumulado:0 };
 				html += `
@@ -3379,7 +3476,7 @@
 					<div>Crédito originado en el mes: <strong>${COP(c.originadoMes)}</strong></div>
 					<div>Abonos aplicados (mes): <strong>-${COP(c.abonosAplicadosMes)}</strong></div>
 					<div>Pendiente al cierre (de lo originado en el mes): <strong>${COP(c.pendienteOriginadoMes)}</strong></div>
-					<div>Pendiente total acumulado al cierre(sumando meses anteriores): <strong>${COP(c.pendienteTotalAcumulado)}</strong></div>
+					<div>Pendiente total acumulado al cierre (sumando meses anteriores): <strong>${COP(c.pendienteTotalAcumulado)}</strong></div>
 				</div>
 				`;
 			}
@@ -3396,18 +3493,24 @@
 		async function exportarInformeMensualPDF() {
 			const yyyyMM = getYYYYMMFromInput();
 			if (!yyyyMM) { mostrarError('Selecciona un mes válido (YYYY-MM).'); return; }
+
 			const negocioSel = document.getElementById('negocioReporte')?.value || 'Todos';
 
-			const datos = await obtenerTodosLosRegistros();
+			const { desde: primerDia, hasta: ultimoDia } = monthRangeFromYYYYMM(yyyyMM);
+
+			// ⬇️ Trae solo los datos del mes y del negocio seleccionado
+			const datos = await fetchPorRango(primerDia, ultimoDia, negocioSel);
+
+			// Resumen mensual con tus KPIs (misma función que usas en la previsualización)
 			const resumen = construirResumenMensual(datos, yyyyMM, negocioSel);
 
+			// ======== PDF =========
 			const { jsPDF } = window.jspdf;
 			const doc = new jsPDF({ unit:'pt', format:'a4' });
 			const margin = 36; // 0.5in
-			const pageWidth = doc.internal.pageSize.getWidth();
+			const pageWidth  = doc.internal.pageSize.getWidth();
 			const pageHeight = doc.internal.pageSize.getHeight();
 
-			// Header
 			function header() {
 				doc.setFillColor(102,126,234); // #667eea
 				doc.rect(0,0,pageWidth,54,'F');
@@ -3419,7 +3522,7 @@
 				doc.setFontSize(11);
 				doc.text(`${nombreMes(yyyyMM)} · ${negocioSel==='Todos' ? 'Todos los negocios' : (nombresNegocios[negocioSel]||negocioSel)}`, margin, 46);
 			}
-			// Footer
+
 			function footer() {
 				const str = `Generado ${new Date().toLocaleString('es-CO')} · Pág. ${doc.internal.getNumberOfPages()}`;
 				doc.setFontSize(9);
@@ -3437,21 +3540,21 @@
 				COP(inf.balance)
 			]));
 
+			// ⬇️ Ajustes ligeros para evitar el warning de ancho
 			doc.autoTable({
 				startY: 70,
 				head: [['Negocio', 'Ventas (caja)', 'Gastos', 'Balance']],
 				body: resumenRows,
 				theme: 'striped',
 				headStyles: { fillColor: [102,126,234] },
-				styles: { fontSize: 10, cellPadding: 6 },
+				styles: { fontSize: 9.5, cellPadding: 5 },   // antes: 10 / 6
 				columnStyles: {
 				1: { halign: 'right' },
 				2: { halign: 'right' },
 				3: { halign: 'right' },
 				},
 				didDrawPage: (data) => {
-				if (data.pageNumber === 1) return;
-				header();
+				if (data.pageNumber > 1) header();
 				},
 				margin: { left: margin, right: margin }
 			});
@@ -3464,11 +3567,10 @@
 			doc.text('Totales del período:', margin, afterResumenY + 24);
 			doc.setFont('helvetica','normal');
 			doc.setTextColor('#000');
-			doc.text(`Ventas (caja): ${COP(resumen.global.ventas)}   ·   Gastos: -${COP(resumen.global.gastos)}   ·   Balance: ${COP(resumen.global.balance)}`, margin, afterResumenY + 42);
-
+			doc.text(`Ventas (caja): ${COP(resumen.global.ventas)} · Gastos: -${COP(resumen.global.gastos)} · Balance: ${COP(resumen.global.balance)}`, margin, afterResumenY + 42);
 			let yCursor = afterResumenY + 58;
 
-			// Secciones por negocio
+			// Secciones por negocio (Top productos, Gastos por categoría y CxC)
 			for (const [neg, inf] of Object.entries(resumen.negocios)) {
 				if (yCursor > pageHeight - 180) { doc.addPage(); header(); yCursor = 70; }
 
@@ -3481,12 +3583,11 @@
 				// KPIs cortos
 				doc.setFont('helvetica','normal');
 				doc.setFontSize(10);
-				doc.text(`Ventas (caja): ${COP(inf.ventas)}   ·   Gastos: -${COP(inf.gastos)}   ·   Balance: ${COP(inf.balance)}`, margin, yCursor + 14);
+				doc.text(`Ventas (caja): ${COP(inf.ventas)} · Gastos: -${COP(inf.gastos)} · Balance: ${COP(inf.balance)}`, margin, yCursor + 14);
 
 				// Top productos
 				const prodBody = (inf.topProductos.length ? inf.topProductos : [{producto:'(sin datos)',cantidad:0,total:0}])
 				.map(p => [p.producto, String(p.cantidad), COP(p.total)]);
-
 				doc.autoTable({
 				startY: yCursor + 28,
 				head: [['Top productos', 'Cant.', 'Total en Ventas']],
@@ -3496,16 +3597,17 @@
 				styles: { fontSize: 9, cellPadding: 5 },
 				columnStyles: {
 					1: { halign: 'center', cellWidth: 60 },
-					2: { halign: 'right', cellWidth: 80 },
+					2: { halign: 'right',  cellWidth: 80 },
 				},
-				margin: { left: margin, right: margin }
+				margin: { left: margin, right: margin },
+				didDrawPage: (data) => { if (data.pageNumber > 1) header(); }
 				});
 
-				// Gastos por categoría
 				const afterProdY = doc.lastAutoTable?.finalY || (yCursor + 28);
+
+				// Gastos por categoría
 				const gastosBody = (inf.gastosCat.length ? inf.gastosCat : [{categoria:'(sin datos)', total:0}])
 				.map(g => [g.categoria, `-${COP(g.total)}`]);
-
 				doc.autoTable({
 				startY: afterProdY + 12,
 				head: [['Gastos por categoría', 'Total']],
@@ -3515,15 +3617,11 @@
 				styles: { fontSize: 9, cellPadding: 5 },
 				columnStyles: { 1: { halign: 'right', cellWidth: 100 } },
 				margin: { left: margin, right: margin },
-				didDrawPage: (data) => {
-					if (data.pageNumber > 1) header();
-				}
+				didDrawPage: (data) => { if (data.pageNumber > 1) header(); }
 				});
 
-				// ... (después de la tabla de Gastos por categoría)
+				// Sección CxC (del mes y acumulado) — ya la tenías: la dejo igual
 				yCursor = doc.lastAutoTable?.finalY + 22;
-
-				// ======= NUEVO: Sección Cuentas por Cobrar (CxC) =======
 				const k = inf.cxc || { originadoMes:0, abonosAplicadosMes:0, pendienteOriginadoMes:0, pendienteTotalAcumulado:0, deudoresMes:[] };
 				if (yCursor > pageHeight - 180) { doc.addPage(); header(); yCursor = 70; }
 
@@ -3534,58 +3632,51 @@
 				doc.setFontSize(10);
 
 				const cxcRows = [
-				['Crédito originado en el mes', COP(k.originadoMes)],
-				['Abonos aplicados a ese crédito (mes)', `-${COP(k.abonosAplicadosMes)}`],
-				['Pendiente al cierre (de lo originado en el mes)', COP(k.pendienteOriginadoMes)],
-				['Pendiente total acumulado al cierre', COP(k.pendienteTotalAcumulado)]
+				['Crédito originado en el mes',            COP(k.originadoMes)],
+				['Abonos aplicados a ese crédito (mes)',   `-${COP(k.abonosAplicadosMes)}`],
+				['Pendiente al cierre (de lo originado)',  COP(k.pendienteOriginadoMes)],
+				['Pendiente total acumulado al cierre',    COP(k.pendienteTotalAcumulado)]
 				];
-
 				doc.autoTable({
-					startY: yCursor + 10,
-					head: [['Concepto', 'Valor']],
-					body: cxcRows,
-					theme: 'grid',
-					headStyles: { fillColor: [52, 58, 64] }, // gris oscuro
-					styles: { fontSize: 9, cellPadding: 5 },
-					columnStyles: { 1: { halign: 'right', cellWidth: 180 } },
-					margin: { left: margin, right: margin },
-					didDrawPage: (data) => {
-						if (data.pageNumber > 1) header();
-					}
+				startY: yCursor + 10,
+				head: [['Concepto', 'Valor']],
+				body: cxcRows,
+				theme: 'grid',
+				headStyles: { fillColor: [52,58,64] }, // gris oscuro
+				styles: { fontSize: 9, cellPadding: 5 },
+				columnStyles: { 1: { halign: 'right', cellWidth: 180 } },
+				margin: { left: margin, right: margin },
+				didDrawPage: (data) => { if (data.pageNumber > 1) header(); }
 				});
 
-				// Top deudores (originado en el mes)
 				const afterCxcY = doc.lastAutoTable?.finalY || (yCursor + 10);
+
 				if (k.deudoresMes && k.deudoresMes.length) {
-					if (afterCxcY > pageHeight - 160) { doc.addPage(); header(); }
-					const bodyDeud = k.deudoresMes.slice(0, 10).map(d => [
-						d.cliente,
-						COP(d.originado),
-						`-${COP(d.abonado)}`,
-						COP(d.pendiente)
-					]);
-
-					doc.autoTable({
-						startY: Math.max(afterCxcY + 12, 70),
-						head: [['Top deudores del mes', 'Originado', 'Abonado', 'Pendiente']],
-						body: bodyDeud,
-						theme: 'grid',
-						headStyles: { fillColor: [220,53,69] }, // rojo
-						styles: { fontSize: 9, cellPadding: 5 },
-						columnStyles: {
-						1: { halign: 'right', cellWidth: 90 },
-						2: { halign: 'right', cellWidth: 90 },
-						3: { halign: 'right', cellWidth: 90 }
-						},
-						margin: { left: margin, right: margin },
-						didDrawPage: (data) => {
-						if (data.pageNumber > 1) header();
-						}
-					});
-
-					yCursor = doc.lastAutoTable?.finalY + 22;
+				if (afterCxcY > pageHeight - 160) { doc.addPage(); header(); }
+				const bodyDeud = k.deudoresMes.slice(0, 10).map(d => [
+					d.cliente,
+					COP(d.originado),
+					`-${COP(d.abonado)}`,
+					COP(d.pendiente)
+				]);
+				doc.autoTable({
+					startY: Math.max(afterCxcY + 12, 70),
+					head: [['Top deudores del mes', 'Originado', 'Abonado', 'Pendiente']],
+					body: bodyDeud,
+					theme: 'grid',
+					headStyles: { fillColor: [220,53,69] },
+					styles: { fontSize: 9, cellPadding: 5 },
+					columnStyles: {
+					1: { halign: 'right', cellWidth: 90 },
+					2: { halign: 'right', cellWidth: 90 },
+					3: { halign: 'right', cellWidth: 90 }
+					},
+					margin: { left: margin, right: margin },
+					didDrawPage: (data) => { if (data.pageNumber > 1) header(); }
+				});
+				yCursor = doc.lastAutoTable?.finalY + 22;
 				} else {
-					yCursor = afterCxcY + 18;
+				yCursor = afterCxcY + 18;
 				}
 			}
 
@@ -3600,7 +3691,7 @@
 			doc.save(fileName);
 		}
 
-		// ===== Helpers de fechas para el período en Informes =====
+		/*// ===== Helpers de fechas para el período en Informes =====
 		function primerDiaMesActualISO() {
 			const d = new Date();
 			const y = d.getFullYear();
@@ -3612,7 +3703,7 @@
 			if (desdeISO && fechaISO < desdeISO) return false;
 			if (hastaISO && fechaISO > hastaISO) return false;
 			return true;
-		}
+		}*/
 
 		// ===== Previsualización del PERÍODO dentro de Informes (réplica de Resumen Diario) =====
 		async function previsualizarPeriodoInforme() {
@@ -3624,7 +3715,7 @@
 			if (!desde || !hasta) { mostrarError('Selecciona un rango de fechas válido.'); return; }
 			if (hasta < desde) { mostrarError('La fecha final no puede ser menor a la inicial.'); return; }
 
-			const datos = await obtenerTodosLosRegistros();
+			const datos = await fetchPorRango(desde, hasta, negocioSel);
 			const container = document.getElementById('previewPeriodoInforme');
 			let html = '';
 
@@ -3703,14 +3794,14 @@
 			const cont = document.getElementById('infCxcPeriodo');
 			if (!cont) return;
 
-			const datos = await obtenerTodosLosRegistros();
-			const acumulado = !!document.getElementById('infCxcAcumuladoPeriodo')?.checked;
-
-			// 🔵 NUEVO: filtro de negocio (si existe el select)
 			const negocioSel = document.getElementById('infNegocioReporte')?.value || 'Todos';
+			const acumulado  = !!document.getElementById('infCxcAcumuladoPeriodo')?.checked;
 
-			let desde = null, hasta = null;
-			if (!acumulado) {
+			let desde, hasta;
+			if (acumulado) {
+				desde = '2000-01-01';
+				hasta = hoyLocalISO();
+			} else {
 				desde = document.getElementById('infDesdePeriodo').value;
 				hasta = document.getElementById('infHastaPeriodo').value;
 				if (!desde || !hasta || hasta < desde) {
@@ -3719,18 +3810,16 @@
 				}
 			}
 
-			const mapaClientes = new Map(); // cliente -> { totalPendiente, cantidadVentas }
+			const datos = await fetchPorRango(desde, hasta, negocioSel);
+
+			const mapaClientes = new Map();
 			let totalGeneral = 0;
 			let totalVentasPendientes = 0;
 
-			// Iterar negocios según filtro
 			const negocios = (negocioSel === 'Todos') ? Object.keys(datos) : [negocioSel];
 			for (const neg of negocios) {
 				const registros = datos[neg] || [];
 				registros.forEach(r => {
-				// Filtro por rango si corresponde
-				if (!acumulado && !(r.fecha && esFechaEnRango(r.fecha, desde, hasta))) return;
-
 				if (r.tipo === 'movimiento' && r.estadoPago === 'Debe') {
 					const pendiente = Number((r.montoPendiente != null ? r.montoPendiente : r.ventas) || 0);
 					if (pendiente > 0) {
@@ -3739,7 +3828,6 @@
 					prev.totalPendiente += pendiente;
 					prev.cantidadVentas += 1;
 					mapaClientes.set(cliente, prev);
-
 					totalGeneral += pendiente;
 					totalVentasPendientes += 1;
 					}
@@ -3764,33 +3852,16 @@
 				<div class="business-section" style="border-left-color:#dc3545;">
 				<h3>💳 Cuentas por Cobrar (${acumulado ? 'Acumulado' : 'Del período'} — ${tituloNegocio})</h3>
 				<div class="summary-grid">
-					<div class="summary-box">
-					<h4>Total por Cobrar</h4>
-					<div class="value" style="color:#dc3545;">${COP(totalGeneral)}</div>
-					</div>
-					<div class="summary-box">
-					<h4>Clientes con deuda</h4>
-					<div class="value">${clientesUnicos}</div>
-					</div>
-					<div class="summary-box">
-					<h4>Ventas pendientes</h4>
-					<div class="value">${totalVentasPendientes}</div>
-					</div>
+					<div class="summary-box"><h4>Total por Cobrar</h4><div class="value" style="color:#dc3545;">${COP(totalGeneral)}</div></div>
+					<div class="summary-box"><h4>Clientes con deuda</h4><div class="value">${clientesUnicos}</div></div>
+					<div class="summary-box"><h4>Ventas pendientes</h4><div class="value">${totalVentasPendientes}</div></div>
 				</div>
 				${
 					clientesUnicos > 0
-					? `
-					<table>
-						<thead>
-						<tr>
-							<th>Cliente</th>
-							<th style="width:140px;"># Ventas</th>
-							<th style="width:200px;">Total Pendiente (COP)</th>
-						</tr>
-						</thead>
+					? `<table>
+						<thead><tr><th>Cliente</th><th style="width:140px;"># Ventas</th><th style="width:200px;">Total Pendiente (COP)</th></tr></thead>
 						<tbody>${filas}</tbody>
-					</table>
-					`
+						</table>`
 					: '<p style="color:#28a745;margin-top:10px;">No hay deudas pendientes. ✅</p>'
 				}
 				</div>
@@ -3809,7 +3880,7 @@
 				return;
 			}
 
-			const datos = await obtenerTodosLosRegistros();
+			const datos = await fetchPorRango(desde, hasta, negocioSel);
 
 			// === Prepara KPIs y colecciones por negocio (respetando filtro) ===
 			const negocios = (negocioSel === 'Todos') ? Object.keys(datos) : [negocioSel];
@@ -4050,7 +4121,7 @@
 		}
 		*/
 		async function construirPL(desdeISO, hastaISO, negocioSel='Todos', incluirCostos=false) {
-			const datos = await obtenerTodosLosRegistros();
+			const datos = await fetchPorRango(desdeISO, hastaISO, negocioSel); // ← usar parámetros
 			const negocios = (negocioSel === 'Todos') ? Object.keys(datos) : [negocioSel];
 
 			const result = {
@@ -4439,6 +4510,16 @@
 				});
 			});
 		}
+
+		function refreshAfterSave(fechaAfectada){
+			// Invalida cache del día, del período que podría incluir hoy y de CxC
+			invalidateCacheByPrefix(`dia:${fechaAfectada}:`);
+			invalidateCacheByPrefix(`rng:`);      // si quieres ser fino, invalida sólo rangos que contengan la fecha
+			invalidateCacheByPrefix(`cxc:`);      // deudas pueden cambiar
+
+			// NO hagas lecturas aquí; deja que cada pestaña, cuando el usuario la vea,
+			// consulte de nuevo (caché vacía -> nueva query).
+		}
     </script>
 	<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/dist/jspdf.plugin.autotable.min.js"></script>
@@ -4465,7 +4546,9 @@
 		where,
 		doc,
 		updateDoc,
-		deleteDoc
+		deleteDoc,
+		serverTimestamp,
+		getCountFromServer
 	  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 	  const firebaseConfig = {
@@ -4493,6 +4576,10 @@
 	  window.doc = doc;
 	  window.updateDoc = updateDoc;
 	  window.deleteDoc = deleteDoc;
+	  window.serverTimestamp = serverTimestamp;
+	  window.cxcSeleccionado = null;
+	  window.getCountFromServer = getCountFromServer;
+	  window.filtroNegocioCobroCliente = null;
 
 	  // Hacer accesible la sesión y métodos de auth a scripts no-módulo
 	  window.auth = auth;
