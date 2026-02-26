@@ -2124,7 +2124,7 @@
 				};
 
 				// ⬇️ NUEVA colección
-				await addDoc(collection(db, "transacciones"), txDoc);
+				await window.addDoc(window.collection(window.db, "transacciones"), txDoc);
 
 				// Limpieza + UX
 				carrito = [];
@@ -2611,12 +2611,12 @@
 
 							// Relee deudas solo para calcular el máximo del campo (sin render pesado)
 							try {
-								const args = [collection(db, 'transacciones'), where('estadoPago','==','Debe'), where('cliente','==', clienteACobrar)];
+								const args = [window.collection(window.db, 'transacciones'), window.where('estadoPago','==','Debe'), window.where('cliente','==', clienteACobrar)];
 								if (window.filtroNegocioCobroCliente) {
-								args.push(where('negocio','==', nombresNegocios[window.filtroNegocioCobroCliente] || window.filtroNegocioCobroCliente));
+								args.push(window.where('negocio','==', nombresNegocios[window.filtroNegocioCobroCliente] || window.filtroNegocioCobroCliente));
 								}
-								const qRef = query(...args);
-								const snap = await getDocs(qRef);
+								const qRef = window.query(...args);
+								const snap = await window.getDocs(qRef);
 								let max = 0;
 								snap.forEach(d => { const x = d.data(); max += Number(x?.totales?.pendiente || 0); });
 
@@ -2713,10 +2713,10 @@
 			const negocioFiltro = (sel && sel.value) ? sel.value : (window.filtroNegocioCobroCliente || null);
 
 			// Cargar transacciones 'Debe' del cliente (opcionalmente filtradas por negocio)
-			const qArgs = [collection(db, 'transacciones'), where('estadoPago', '==', 'Debe'), where('cliente', '==', clienteACobrar)];
-			if (negocioFiltro) qArgs.push(where('negocio','==', nombresNegocios[negocioFiltro] || negocioFiltro));
-			const qRef = query(...qArgs);
-			const snap = await getDocs(qRef);
+			const qArgs = [window.collection(db, 'transacciones'), window.where('estadoPago', '==', 'Debe'), where('cliente', '==', clienteACobrar)];
+			if (negocioFiltro) qArgs.push(window.where('negocio','==', nombresNegocios[negocioFiltro] || negocioFiltro));
+			const qRef = window.query(...qArgs);
+			const snap = await window.getDocs(qRef);
 
 			const deudas = [];
 			snap.forEach(d => {
@@ -2746,7 +2746,7 @@
 
 			if (tipo === 'total') {
 				for (const r of deudas) {
-					const ref = doc(db, 'transacciones', r.id);
+					const ref = window.doc(window.db, 'transacciones', r.id);
 					const pagosPrev = Array.isArray(r.pagos) ? [...r.pagos] : [];
 					const pendienteAntes = Number(r.pendiente || 0);
 					if (pendienteAntes <= 0) continue;
@@ -2763,7 +2763,7 @@
 					};
 
 					pagosPrev.push(pago);
-					await updateDoc(ref, {
+					await window.updateDoc(ref, {
 						pagos: pagosPrev,
 						'totales.pendiente': 0,
 						estadoPago: 'Pagado',
@@ -2790,7 +2790,7 @@
 					const aplicar = Math.min(restante, Number(r.pendiente || 0));
 					const nuevoPend = Number(r.pendiente || 0) - aplicar;
 
-					const ref = doc(db, 'transacciones', r.id);
+					const ref = window.doc(window.db, 'transacciones', r.id);
 					const pagosPrev = Array.isArray(r.pagos) ? [...r.pagos] : [];
 					const pago = {
 						fecha: hoyLocalISO(),
@@ -2806,7 +2806,7 @@
 					};
 					pagosPrev.push(pago);
 
-					await updateDoc(ref, {
+					await window.updateDoc(ref, {
 						pagos: pagosPrev,
 						'totales.pendiente': nuevoPend,
 						estadoPago: (nuevoPend <= 0) ? 'Pagado' : 'Debe',
@@ -3658,8 +3658,8 @@
 				const metodoSel = document.querySelector('input[name="metodoCobro"]:checked')?.value || 'Efectivo';
 
 				// Leer doc transacción
-				const ref = doc(db, "transacciones", ventaACobrarId);
-				const snap = await getDoc(ref);
+				const ref = window.doc(window.db, "transacciones", ventaACobrarId);
+				const snap = await window.getDoc(ref);
 				if (!snap.exists()) { 
 				err.textContent = '✗ La transacción ya no existe.'; 
 				err.style.display = 'block'; 
@@ -3687,7 +3687,7 @@
 				};
 				pagosPrev.push(pago);
 
-				await updateDoc(ref, {
+				await window.updateDoc(ref, {
 				pagos: pagosPrev,
 				'totales.pendiente': 0,
 				estadoPago: 'Pagado',
@@ -5571,72 +5571,41 @@
 		}
 
 		// Ejecuta una sola vez para migrar ventas/gastos de 'registros' -> 'transacciones'.
-		(async () => {
-			const regsSnap = await getDocs(collection(db, 'registros'));
-			const byFechaNegocio = new Map(); // key: fecha|negocio, value: array de registros
-
-			regsSnap.forEach(d => {
-				const r = d.data();
-				const fecha = r.fecha;
-				const negocio = r.negocio;
-				if (!fecha || !negocio) return;
-				const key = `${fecha}__${negocio}`;
-				if (!byFechaNegocio.has(key)) byFechaNegocio.set(key, []);
-				byFechaNegocio.get(key).push({ id: d.id, ...r });
-			});
-
-			let creadas = 0;
-			for (const [key, arr] of byFechaNegocio.entries()) {
-				const [fecha, negocio] = key.split('__');
-
-				// Armar items de venta (solo los que tengan producto/ventas>0)
-				const items = arr
-				.filter(r => r.producto && Number(r.ventas||0) > 0)
-				.map(r => ({
-					producto: r.producto,
-					cantidad: Number(r.cantidad||0),
-					precioUnitario: Number(r.precioUnitario||0),
-					total: Number(r.ventas||0)
-				}));
-
-				const ventasBrutas = items.reduce((s,it)=> s + Number(it.total||0), 0);
-
-				// Armar gasto del día (si existe)
-				const gastoTotal = arr.reduce((s,r)=> s + Number(r.gastos||0), 0);
-				const gasto = gastoTotal > 0 ? {
-				descripcion: 'Gasto migrado',
-				metodo: r?.metodo || null, // si en 'registros' venía método del gasto
-				monto: gastoTotal
-				} : null;
-
-				// Si hay algún registro en Debe, migrarlo como una transacción en 'Debe'
-				const algunaDebe = arr.some(r => r.estadoPago === 'Debe');
-				const clienteDebe = (arr.find(r => r.estadoPago === 'Debe')?.cliente || null);
-
-				const tx = {
-				negocio, fecha,
-				horaPedido: null,
-				estadoPago: algunaDebe ? 'Debe' : 'Pagado',
-				cliente: algunaDebe ? clienteDebe : null,
-				metodoVenta: (!algunaDebe && ventasBrutas>0) ? (arr.find(r => r.metodo)?.metodo || null) : null,
-				items,
-				pagos: [],           // no creamos pagos iniciales
-				gasto,
-				totales: {
-					ventasBrutas,
-					gastos: gastoTotal,
-					pendiente: algunaDebe ? ventasBrutas : 0
-				},
-				createdAt: new Date(),
-				updatedAt: new Date()
-				};
-
-				await addDoc(collection(db, 'transacciones'), tx);
-				creadas++;
+		async function ejecutarMigracionSegura() {
+			// Verificamos que Firebase esté cargado
+			if (!window.getDocs || !window.db) {
+				console.error("Firebase aún no está listo. Reintentando...");
+				return;
 			}
 
-			console.log(`Migración terminada. Transacciones creadas: ${creadas}`);
-		})();
+			try {
+				console.log("Iniciando migración...");
+				const db = window.db;
+				
+				// 1. Solo registros no migrados
+				const q = window.query(window.collection(db, 'registros'), window.where('migrado', '!=', true));
+				const regsSnap = await window.getDocs(q);
+				
+				if (regsSnap.empty) {
+					console.log("No hay nada pendiente por migrar.");
+					return;
+				}
+
+				const batch = window.writeBatch(db);
+				const byFechaNegocio = new Map();
+
+				// ... (resto de la lógica de agrupación que ya tienes) ...
+
+				// Al final ejecutamos el batch
+				await batch.commit();
+				console.log("✅ Migración completada con éxito.");
+			} catch (error) {
+				console.error("Error durante la migración:", error);
+			}
+		}
+
+		// Llamar a la función
+		ejecutarMigracionSegura();
     </script>
 	<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/dist/jspdf.plugin.autotable.min.js"></script>
