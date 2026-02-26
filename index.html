@@ -834,7 +834,7 @@
             
             <div class="business-section">
                 <h4>Información del Sistema</h4>
-                <p><strong>Versión:</strong> 2.0.2</p>
+                <p><strong>Versión:</strong> 2.0.3</p>
                 <p><strong>Negocios Registrados:</strong> 4</p>
                 <p><strong>Datos Almacenados:</strong> <span id="totalRegistros">0</span> registros</p>
             </div>
@@ -5572,59 +5572,78 @@
 
 		// Ejecuta una sola vez para migrar ventas/gastos de 'registros' -> 'transacciones'.
 		// Espera a que el módulo exponga las globals
-		async function ejecutarMigracionSegura() {
-			try {
-				await waitForFirebaseReady(); // <- ya existe en tu app
-				if (!(window.db && window.getDocs && window.collection && window.query && window.where && window.writeBatch)) {
-				console.error("❌ Firebase globals no están disponibles en window.*");
+		async function ejecutarMigracionPaginada() {
+			await waitForFirebaseReady(); // ya existe en tu app 
+
+			const hasGlobals =
+				window.db && window.collection && window.getDocs &&
+				window.orderBy && window.startAfter && window.limit &&
+				window.writeBatch && window.doc;
+			if (!hasGlobals) {
+				console.error('❌ Faltan globals de Firestore en window.*');
 				return;
-				}
+			}
 
-				console.log("Iniciando migración...");
+			console.log('Iniciando migración (paginada por __name__)…');
 
-				const db = window.db;
+			const db = window.db;
+			const pageSize = 300; // ajusta según tu cuota/velocidad
+			let lastDoc = null;
+			let totalCandidatos = 0;
+			let totalCreados = 0;
+			let totalMarcados = 0;
+			let page = 0;
 
-				// 1) Trae SOLO registros NO migrados (incluye los que no tienen el campo)
-				const q = window.query(
+			while (true) {
+				page++;
+
+				// Página por ID (sin filtros), para no dejar fuera los docs sin 'migrado'
+				const base = [
 				window.collection(db, 'registros'),
-				window.where('migrado', '!=', true)
-				);
-				const regsSnap = await window.getDocs(q);
+				window.orderBy(window.documentId ? window.documentId() : '__name__')
+				];
+				if (lastDoc) base.push(window.startAfter(lastDoc));
+				base.push(window.limit(pageSize));
 
-				console.log('Documentos candidatos:', regsSnap.size);
-				if (regsSnap.empty) {
-				console.log("No hay nada pendiente por migrar.");
-				return;
+				const q = window.query(...base);
+				const snap = await window.getDocs(q); // lee página  
+
+				if (snap.empty) {
+				console.log('No hay más páginas por leer.');
+				break;
 				}
 
-				// 2) Prepara el batch
+				// Selección en cliente: solo los que no estén migrados
+				const candidatos = snap.docs.filter(d => (d.data()?.migrado !== true));
+				console.log(`Página ${page}: leídos=${snap.size}, candidatos=${candidatos.length}`);
+				totalCandidatos += candidatos.length;
+
+				if (candidatos.length > 0) {
 				const batch = window.writeBatch(db);
-				let creados = 0;
-				let marcados = 0;
+				let creados = 0, marcados = 0;
 
-				// 3) Recorre y transforma cada doc de 'registros' -> 'transacciones'
-				regsSnap.forEach(docSnap => {
-				const r = docSnap.data();
-				const id = docSnap.id;
+				for (const d of candidatos) {
+					const r = d.data();
+					const id = d.id;
 
-				// --- Mapping básico: AJUSTA a tu shape real si hace falta ---
-				const fecha = r.fecha ?? '';              // 'YYYY-MM-DD'
-				const negocio = r.negocio ?? '';
-				const ventas  = Number(r.ventas ?? 0);
-				const gastos  = Number(r.gastos ?? 0);
-				const estadoPago = r.estadoPago ?? (ventas > 0 ? 'Pagado' : 'SoloGasto');
-				const cliente = (estadoPago === 'Debe') ? (r.cliente ?? null) : null;
+					// === Mapping mínimo; ajústalo si tienes más campos ===
+					const fecha  = r.fecha ?? '';
+					const negocio = r.negocio ?? '';
+					const ventas = Number(r.ventas ?? 0);
+					const gastos = Number(r.gastos ?? 0);
+					const estadoPago = r.estadoPago ?? (ventas > 0 ? 'Pagado' : 'SoloGasto');
+					const cliente = (estadoPago === 'Debe') ? (r.cliente ?? null) : null;
 
-				const items = Array.isArray(r.items)
+					const items = Array.isArray(r.items)
 					? r.items
 					: (ventas > 0 && r.producto
-					? [{ producto: r.producto,
+						? [{ producto: r.producto,
 							cantidad: Number(r.cantidad ?? 1),
 							precioUnitario: Number(r.precioUnitario ?? ventas),
 							total: ventas }]
-					: []);
+						: []);
 
-				const txDoc = {
+					const txDoc = {
 					negocio,
 					fecha,
 					horaPedido: r.hora ?? null,
@@ -5633,46 +5652,51 @@
 					metodoVenta: (estadoPago === 'Pagado') ? (r.metodo ?? null) : null,
 					metodoGasto: (gastos > 0) ? (r.metodoGasto ?? r.metodo ?? null) : null,
 					items,
-					pagos: [], // si necesitas registrar pago inicial, ajusta aquí
-					gasto: (gastos > 0) ? { descripcion: r.descripcion ?? 'Gasto migrado',
-											metodo: (r.metodoGasto ?? r.metodo ?? null),
-											monto: gastos } : null,
+					pagos: [],
+					gasto: (gastos > 0) ? {
+						descripcion: r.descripcion ?? 'Gasto migrado',
+						metodo: (r.metodoGasto ?? r.metodo ?? null),
+						monto: gastos
+					} : null,
 					totales: {
-					ventasBrutas: ventas,
-					gastos: gastos,
-					pendiente: (estadoPago === 'Debe') ? ventas : 0
+						ventasBrutas: ventas,
+						gastos,
+						pendiente: (estadoPago === 'Debe') ? ventas : 0
 					},
 					createdAt: r.createdAt ?? new Date(),
 					updatedAt: new Date(),
 					_migradoDesde: 'registros',
 					_idOriginal: id
-				};
+					};
 
-				// 3.1) Crea el doc en 'transacciones'
-				const newId = (window.crypto?.randomUUID?.() || `${id}_${Date.now()}`);
-				const txRef = window.doc(db, 'transacciones', newId);
-				batch.set(txRef, txDoc);
-				creados++;
+					const newId = (window.crypto?.randomUUID?.() || `${id}_${Date.now()}`);
+					const txRef  = window.doc(db, 'transacciones', newId);
+					const srcRef = window.doc(db, 'registros', id);
 
-				// 3.2) Marca el original como migrado
-				const srcRef = window.doc(db, 'registros', id);
-				batch.update(srcRef, { migrado: true, migradoAt: new Date() });
-				marcados++;
-				});
+					batch.set(txRef, txDoc);
+					creados++;
+					batch.update(srcRef, { migrado: true, migradoAt: new Date() });
+					marcados++;
+				}
 
-				console.log('Creaciones en transacciones (batch.set):', creados);
-				console.log('Marcados como migrado (batch.update):', marcados);
-
-				// 4) Commit
 				await batch.commit();
-				console.log("✅ Migración completada con éxito.");
-			} catch (error) {
-				console.error("Error durante la migración:", error);
-			}
-		}
+				console.log(`Página ${page}: creados=${creados}, marcados=${marcados}`);
+				totalCreados += creados;
+				totalMarcados += marcados;
+				} else {
+				console.log(`Página ${page}: sin candidatos para migrar.`);
+				}
 
-		// Llamar a la función (o átala a un botón en Configuración)
-		ejecutarMigracionSegura();
+				// Avanza el cursor a la última doc de esta página
+				lastDoc = snap.docs[snap.docs.length - 1];
+				if (snap.size < pageSize) {
+				// Fin (última página)
+				break;
+				}
+			}
+
+			console.log(`✅ Migración finalizada. Candidatos=${totalCandidatos}, Creados=${totalCreados}, Marcados=${totalMarcados}`);
+		}
     </script>
 	<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/dist/jspdf.plugin.autotable.min.js"></script>
@@ -5697,6 +5721,9 @@
 		getDoc,
 		query, 
 		where,
+		orderBy,
+		startAfter,
+		limit,
 		doc,
 		writeBatch,
 		setDoc,
@@ -5728,6 +5755,9 @@
 	  window.getDoc  = getDoc;
 	  window.query = query;
 	  window.where = where;
+	  window.orderBy = orderBy;
+	  window.startAfter = startAfter;
+	  window.limit = limit;
 	  window.doc = doc;
 	  window.writeBatch = writeBatch;
 	  window.setDoc = setDoc;
