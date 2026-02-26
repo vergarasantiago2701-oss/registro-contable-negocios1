@@ -834,7 +834,7 @@
             
             <div class="business-section">
                 <h4>Información del Sistema</h4>
-                <p><strong>Versión:</strong> 2.0</p>
+                <p><strong>Versión:</strong> 2.0.1</p>
                 <p><strong>Negocios Registrados:</strong> 4</p>
                 <p><strong>Datos Almacenados:</strong> <span id="totalRegistros">0</span> registros</p>
             </div>
@@ -5571,41 +5571,110 @@
 		}
 
 		// Ejecuta una sola vez para migrar ventas/gastos de 'registros' -> 'transacciones'.
+		// Espera a que el módulo exponga las globals
 		async function ejecutarMigracionSegura() {
-			// Verificamos que Firebase esté cargado
-			if (!window.getDocs || !window.db) {
-				console.error("Firebase aún no está listo. Reintentando...");
-				return;
-			}
-
 			try {
-				console.log("Iniciando migración...");
-				const db = window.db;
-				
-				// 1. Solo registros no migrados
-				const q = window.query(window.collection(db, 'registros'), window.where('migrado', '!=', true));
-				const regsSnap = await window.getDocs(q);
-				
-				if (regsSnap.empty) {
-					console.log("No hay nada pendiente por migrar.");
-					return;
+				// 🔒 Asegura timing (en lugar de "return y reintento" que puede dejar la migración sin correrse)
+				await waitForFirebaseReady();
+
+				if (!(window.db && window.getDocs && window.collection && window.query && window.where)) {
+				console.error("Firebase globals no expuestas en window.*");
+				return;
 				}
 
+				console.log("Iniciando migración...");
+
+				const db = window.db;
+
+				// 1) Trae SOLO registros NO migrados (incluye docs sin el campo 'migrado')
+				const q = window.query(
+				window.collection(db, 'registros'),
+				window.where('migrado', '!=', true)
+				);
+				const regsSnap = await window.getDocs(q);
+
+				if (regsSnap.empty) {
+				console.log("No hay nada pendiente por migrar.");
+				return;
+				}
+
+				// 2) Prepara el batch (si tu módulo no expuso writeBatch, ver paso A)
 				const batch = window.writeBatch(db);
+
+				// (opcional) Si quieres agrupar por fecha/negocio:
 				const byFechaNegocio = new Map();
 
-				// ... (resto de la lógica de agrupación que ya tienes) ...
+				regsSnap.forEach(docSnap => {
+				const r = docSnap.data();
+				const id = docSnap.id;
 
-				// Al final ejecutamos el batch
+				// === TU MAPPING DE 'registros' -> 'transacciones' ===
+				// Ajusta los campos al nuevo modelo (t.items, t.gasto, t.totales, etc.)
+				// A modo de ejemplo básico (adáptalo a tu estructura real):
+				const fecha = r.fecha ?? ''; // 'YYYY-MM-DD'
+				const negocio = r.negocio ?? '';
+				const ventas = Number(r.ventas ?? 0);
+				const gastos = Number(r.gastos ?? 0);
+				const estadoPago = r.estadoPago ?? (ventas > 0 ? 'Pagado' : 'SoloGasto');
+				const cliente = (estadoPago === 'Debe') ? (r.cliente ?? null) : null;
+
+				const txDoc = {
+					negocio,
+					fecha,
+					horaPedido: r.hora ?? null,
+					estadoPago,
+					cliente,
+					metodoVenta: (estadoPago === 'Pagado') ? (r.metodo ?? null) : null,
+					metodoGasto: (gastos > 0) ? (r.metodoGasto ?? r.metodo ?? null) : null,
+					items: Array.isArray(r.items) ? r.items : (
+					ventas > 0 && r.producto
+						? [{ producto: r.producto, cantidad: Number(r.cantidad ?? 1), precioUnitario: Number(r.precioUnitario ?? ventas), total: ventas }]
+						: []
+					),
+					pagos: [], // en el modelo nuevo los abonos van acá; si ‘Pagado’ y quieres registrar un pago inicial explícito, ajusta según tu criterio
+					gasto: (gastos > 0) ? { descripcion: r.descripcion ?? 'Gasto migrado', metodo: (r.metodoGasto ?? r.metodo ?? null), monto: gastos } : null,
+					totales: {
+					ventasBrutas: ventas,
+					gastos: gastos,
+					pendiente: (estadoPago === 'Debe') ? ventas : 0
+					},
+					createdAt: r.createdAt ?? new Date(),
+					updatedAt: new Date(),
+					// (opcional) marca origen para auditoría:
+					_migradoDesde: 'registros',
+					_idOriginal: id
+				};
+
+				// 2.1) Crea doc en 'transacciones' (deja que Firestore asigne ID)
+				const txRef = window.doc(window.db, 'transacciones', window.crypto?.randomUUID?.() || `${id}_${Date.now()}`);
+				batch.set(txRef, txDoc);
+
+				// 2.2) Marca el origen como migrado
+				const srcRef = window.doc(window.db, 'registros', id);
+				batch.update(srcRef, { migrado: true, migradoAt: new Date() });
+
+				// (opcional) Si quieres agrupar por fecha-negocio
+				const key = `${fecha}::${negocio}`;
+				const arr = byFechaNegocio.get(key) || [];
+				arr.push({ srcId: id, txRefId: txRef.id });
+				byFechaNegocio.set(key, arr);
+				});
+
+				// 3) Ejecuta el batch
 				await batch.commit();
 				console.log("✅ Migración completada con éxito.");
 			} catch (error) {
 				console.error("Error durante la migración:", error);
+				// Si ves error con índice al ejecutar la query con '!=' => crea el índice que Firestore sugiere en consola
 			}
 		}
 
-		// Llamar a la función
-		ejecutarMigracionSegura();
+		// Llamada controlada (puedes asociarla a un botón “Migrar” en Config)
+		(async () => {
+			try {
+				await ejecutarMigracionSegura();
+			} catch {}
+		})();
     </script>
 	<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/dist/jspdf.plugin.autotable.min.js"></script>
@@ -5631,6 +5700,8 @@
 		query, 
 		where,
 		doc,
+		writeBatch,
+		setDoc,
 		updateDoc,
 		deleteDoc,
 		serverTimestamp,
@@ -5660,6 +5731,8 @@
 	  window.query = query;
 	  window.where = where;
 	  window.doc = doc;
+	  window.writeBatch = writeBatch;
+	  window.setDoc = setDoc;
 	  window.updateDoc = updateDoc;
 	  window.deleteDoc = deleteDoc;
 	  window.serverTimestamp = serverTimestamp;
