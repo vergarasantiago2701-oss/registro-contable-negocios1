@@ -834,7 +834,7 @@
             
             <div class="business-section">
                 <h4>Información del Sistema</h4>
-                <p><strong>Versión:</strong> 2.0.3</p>
+                <p><strong>Versión:</strong> 2.0.4</p>
                 <p><strong>Negocios Registrados:</strong> 4</p>
                 <p><strong>Datos Almacenados:</strong> <span id="totalRegistros">0</span> registros</p>
             </div>
@@ -874,7 +874,44 @@
               <div id="cfgTablaWrap" style="margin-top:14px;">
                 <!-- Aquí se renderiza la tabla del catálogo del negocio seleccionado -->
               </div>
-            </div>			
+            </div>	
+			
+			<!-- ===== Migración de registros -> transacciones ===== -->
+			<div class="business-section" id="migracionSection">
+				<h4>Herramientas de Migración</h4>
+				<p style="color:#666;margin:8px 0 10px;">
+					Migra documentos de <code>registros</code> hacia <code>transacciones</code> (solo los que <strong>no</strong> tengan <code>migrado === true</code>).
+				</p>
+				<div class="button-group" style="justify-content:flex-start;">
+					<button id="btnMigrar" class="btn-danger" type="button" onclick="runMigracionPaginada()">
+					🔁 Migrar registros → transacciones
+					</button>
+				</div>
+				<div id="migracionLog"
+					style="margin-top:10px; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+							font-size:13px; white-space:pre-wrap; color:#333; background:#f7f7f9; border:1px solid #eee;
+							padding:10px; border-radius:6px;">
+					(sin ejecutar)
+				</div>
+			</div>
+			<!-- ===== Verificador de migración ===== -->
+			<div class="business-section" id="verificadorMigracionSection">
+				<h4>Verificador de migración</h4>
+				<p style="color:#666;margin:8px 0 10px;">
+					Revisa totales de <code>registros</code>, migrados y <code>transacciones</code> sin descargar datos.
+				</p>
+				<div class="button-group" style="justify-content:flex-start;">
+					<button id="btnVerificarMigracion" class="btn-secondary" type="button" onclick="runVerificadorMigracion()">
+					🔍 Verificar migración
+					</button>
+				</div>
+				<div id="verificadorLog"
+					style="margin-top:10px; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+							font-size:13px; white-space:pre-wrap; color:#333; background:#f7f7f9; border:1px solid #eee;
+							padding:10px; border-radius:6px;">
+					(sin verificar)
+				</div>
+			</div>
         </div>
 		<!-- PESTAÑA 6: INFORMES -->
 		<div id="informes" class="content">
@@ -5571,52 +5608,67 @@
 		}
 
 		// Ejecuta una sola vez para migrar ventas/gastos de 'registros' -> 'transacciones'.
-		// Espera a que el módulo exponga las globals
-		async function ejecutarMigracionPaginada() {
-			await waitForFirebaseReady(); // ya existe en tu app 
+		/**
+		 * Migración paginada de 'registros' -> 'transacciones'.
+		 * - NO usa where('migrado','!=',true), para no excluir docs sin ese campo.
+		 * - Lee en páginas por __name__ (ID), filtra en cliente r.migrado !== true.
+		 * - Crea en 'transacciones' y marca 'registros/{id}' como migrado:true.
+		 * Requiere en window.*: collection, getDocs, query, orderBy, startAfter, limit, writeBatch, doc, setDoc, updateDoc
+		 */
+		async function ejecutarMigracionPaginada({ pageSize = 300 } = {}) {
+			await waitForFirebaseReady();
 
-			const hasGlobals =
+			const ok =
 				window.db && window.collection && window.getDocs &&
-				window.orderBy && window.startAfter && window.limit &&
-				window.writeBatch && window.doc;
-			if (!hasGlobals) {
-				console.error('❌ Faltan globals de Firestore en window.*');
-				return;
+				window.query && window.orderBy && window.startAfter &&
+				window.limit && window.writeBatch && window.doc;
+			if (!ok) {
+				throw new Error('Faltan APIs de Firestore expuestas en window.* (orderBy/startAfter/limit/writeBatch/etc.)');
 			}
 
-			console.log('Iniciando migración (paginada por __name__)…');
-
 			const db = window.db;
-			const pageSize = 300; // ajusta según tu cuota/velocidad
+			const log = (msg) => {
+				try {
+				const el = document.getElementById('migracionLog');
+				if (el) el.textContent += (el.textContent.trim() ? '\n' : '') + msg;
+				console.log('[MIG]', msg);
+				} catch {}
+			};
+
+			log('Iniciando migración (paginada por __name__)…');
+
 			let lastDoc = null;
+			let page = 0;
+			let totalLeidos = 0;
 			let totalCandidatos = 0;
 			let totalCreados = 0;
 			let totalMarcados = 0;
-			let page = 0;
 
 			while (true) {
 				page++;
 
-				// Página por ID (sin filtros), para no dejar fuera los docs sin 'migrado'
-				const base = [
+				const parts = [
 				window.collection(db, 'registros'),
-				window.orderBy(window.documentId ? window.documentId() : '__name__')
+				// orderBy por __name__ (ID). Si tu build expone documentId(), úsalo:
+				(window.documentId ? window.orderBy(window.documentId()) : window.orderBy('__name__'))
 				];
-				if (lastDoc) base.push(window.startAfter(lastDoc));
-				base.push(window.limit(pageSize));
+				if (lastDoc) parts.push(window.startAfter(lastDoc));
+				parts.push(window.limit(pageSize));
 
-				const q = window.query(...base);
-				const snap = await window.getDocs(q); // lee página  
+				const q = window.query(...parts);
+				const snap = await window.getDocs(q);
 
 				if (snap.empty) {
-				console.log('No hay más páginas por leer.');
+				log('No hay más páginas por leer.');
 				break;
 				}
 
-				// Selección en cliente: solo los que no estén migrados
+				totalLeidos += snap.size;
+
+				// Filtrado en cliente: migrado !== true (incluye docs sin el campo)
 				const candidatos = snap.docs.filter(d => (d.data()?.migrado !== true));
-				console.log(`Página ${page}: leídos=${snap.size}, candidatos=${candidatos.length}`);
 				totalCandidatos += candidatos.length;
+				log(`Página ${page}: leídos=${snap.size}, candidatos=${candidatos.length}`);
 
 				if (candidatos.length > 0) {
 				const batch = window.writeBatch(db);
@@ -5626,21 +5678,23 @@
 					const r = d.data();
 					const id = d.id;
 
-					// === Mapping mínimo; ajústalo si tienes más campos ===
-					const fecha  = r.fecha ?? '';
+					// === Mapping básico; ajusta si tu modelo necesita más ===
+					const fecha   = r.fecha ?? '';
 					const negocio = r.negocio ?? '';
-					const ventas = Number(r.ventas ?? 0);
-					const gastos = Number(r.gastos ?? 0);
+					const ventas  = Number(r.ventas ?? 0);
+					const gastos  = Number(r.gastos ?? 0);
 					const estadoPago = r.estadoPago ?? (ventas > 0 ? 'Pagado' : 'SoloGasto');
 					const cliente = (estadoPago === 'Debe') ? (r.cliente ?? null) : null;
 
 					const items = Array.isArray(r.items)
 					? r.items
 					: (ventas > 0 && r.producto
-						? [{ producto: r.producto,
+						? [{
+							producto: r.producto,
 							cantidad: Number(r.cantidad ?? 1),
 							precioUnitario: Number(r.precioUnitario ?? ventas),
-							total: ventas }]
+							total: ventas
+							}]
 						: []);
 
 					const txDoc = {
@@ -5673,29 +5727,140 @@
 					const txRef  = window.doc(db, 'transacciones', newId);
 					const srcRef = window.doc(db, 'registros', id);
 
-					batch.set(txRef, txDoc);
+					batch.set(txRef, txDoc);              // crear en transacciones
+					batch.update(srcRef, {                // marcar origen como migrado
+					migrado: true,
+					migradoAt: new Date()
+					});
+
 					creados++;
-					batch.update(srcRef, { migrado: true, migradoAt: new Date() });
 					marcados++;
 				}
 
 				await batch.commit();
-				console.log(`Página ${page}: creados=${creados}, marcados=${marcados}`);
 				totalCreados += creados;
 				totalMarcados += marcados;
+
+				log(`Página ${page}: creados=${creados}, marcados=${marcados}`);
 				} else {
-				console.log(`Página ${page}: sin candidatos para migrar.`);
+				log(`Página ${page}: sin candidatos para migrar.`);
 				}
 
-				// Avanza el cursor a la última doc de esta página
 				lastDoc = snap.docs[snap.docs.length - 1];
 				if (snap.size < pageSize) {
-				// Fin (última página)
+				// Última página
 				break;
 				}
 			}
 
-			console.log(`✅ Migración finalizada. Candidatos=${totalCandidatos}, Creados=${totalCreados}, Marcados=${totalMarcados}`);
+			log(`✅ Migración finalizada. Leídos=${totalLeidos}, Candidatos=${totalCandidatos}, Creados=${totalCreados}, Marcados=${totalMarcados}`);
+		}
+
+		/** Handler del botón con protección anti doble clic */
+		let __migrando = false;
+		async function runMigracionPaginada() {
+		if (__migrando) return;
+		__migrando = true;
+
+		const btn = document.getElementById('btnMigrar');
+		const logEl = document.getElementById('migracionLog');
+		const setLog = (t) => { if (logEl) logEl.textContent = t; };
+
+		try {
+			if (btn) { btn.disabled = true; btn.textContent = 'Migrando…'; }
+			setLog('(iniciando)…');
+			await ejecutarMigracionPaginada({ pageSize: 300 });
+			setLog((logEl?.textContent ?? '') + '\nHecho.');
+		} catch (e) {
+			console.error(e);
+			setLog((logEl?.textContent ?? '') + `\n❌ Error: ${e?.message || e}`);
+			alert('Ocurrió un error durante la migración. Revisa la consola para más detalles.');
+		} finally {
+			if (btn) { btn.disabled = false; btn.textContent = '🔁 Migrar registros → transacciones'; }
+			__migrando = false;
+		}
+		}
+
+		/**
+		 * Verifica la migración:
+		 * - totalRegistros: count(registros)
+		 * - migrados: count(registros where migrado == true)
+		 * - sinMigrar = totalRegistros - migrados
+		 * - totalTransacciones: count(transacciones)
+		 */
+		async function verificarMigracion() {
+			await waitForFirebaseReady();
+
+			const logEl = document.getElementById('verificadorLog');
+			const setLog = (t) => { if (logEl) logEl.textContent = t; };
+			const append = (t) => { if (logEl) logEl.textContent += (logEl.textContent.trim() ? '\n' : '') + t; };
+
+			try {
+				setLog('⏳ Consultando totales (conteos en servidor)…');
+
+				// 1) Total en 'registros'
+				const qTotalRegs = window.query(window.collection(window.db, 'registros'));
+				const snapTotalRegs = await window.getCountFromServer(qTotalRegs);
+				const totalRegistros = Number(snapTotalRegs.data().count ?? 0);
+
+				// 2) Migrados en 'registros' (migrado == true)
+				const qMigrados = window.query(
+				window.collection(window.db, 'registros'),
+				window.where('migrado', '==', true)
+				);
+				const snapMigrados = await window.getCountFromServer(qMigrados);
+				const migrados = Number(snapMigrados.data().count ?? 0);
+
+				// 3) Faltantes (los que no tienen migrado:true)
+				const sinMigrar = Math.max(0, totalRegistros - migrados);
+
+				// 4) Total en 'transacciones' (opcional pero útil)
+				const qTx = window.query(window.collection(window.db, 'transacciones'));
+				const snapTx = await window.getCountFromServer(qTx);
+				const totalTransacciones = Number(snapTx.data().count ?? 0);
+
+				// 5) Render
+				const resumen =
+			`📊 Verificación de migración
+
+			• registros (total):         ${totalRegistros}
+			• registros (migrado:true):  ${migrados}
+			• registros (sin migrar):    ${sinMigrar}
+			• transacciones (total):     ${totalTransacciones}
+
+			${sinMigrar === 0
+			? '✅ No hay pendientes por migrar.'
+			: '⚠️ Aún hay documentos por migrar. Ejecuta la migración paginada.'}`;
+
+				append(resumen);
+			} catch (e) {
+				console.error('Error en verificador de migración:', e);
+				append(`❌ Error: ${e?.message || e}`);
+			}
+			}
+
+			/** Handler con protección anti doble clic */
+			let __verificando = false;
+			async function runVerificadorMigracion() {
+			if (__verificando) return;
+			__verificando = true;
+
+			const btn = document.getElementById('btnVerificarMigracion');
+			const logEl = document.getElementById('verificadorLog');
+			const setLog = (t) => { if (logEl) logEl.textContent = t; };
+
+			try {
+				if (btn) { btn.disabled = true; btn.textContent = 'Verificando…'; }
+				setLog('(iniciando)…');
+				await verificarMigracion();
+			} catch (e) {
+				console.error(e);
+				setLog((logEl?.textContent ?? '') + `\n❌ Error: ${e?.message || e}`);
+				alert('Ocurrió un error durante la verificación. Revisa la consola para más detalles.');
+			} finally {
+				if (btn) { btn.disabled = false; btn.textContent = '🔍 Verificar migración'; }
+				__verificando = false;
+			}
 		}
     </script>
 	<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
