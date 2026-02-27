@@ -834,7 +834,7 @@
             
             <div class="business-section">
                 <h4>Información del Sistema</h4>
-                <p><strong>Versión:</strong> 2.0.4</p>
+                <p><strong>Versión:</strong> 2.1.4</p>
                 <p><strong>Negocios Registrados:</strong> 4</p>
                 <p><strong>Datos Almacenados:</strong> <span id="totalRegistros">0</span> registros</p>
             </div>
@@ -4174,54 +4174,66 @@
 			cont.innerHTML = html;
 		}
 
-		// Exportar PDF (Informe mensual) — versión 100% Transacciones y con CxC/deudores
+		// Exportar PDF (Informe mensual) — versión 100% Transacciones + CxC/deudores
 		async function exportarInformeMensualPDF() {
-			// 1) === Inputs del mes y negocio (DEBEN ir antes de la capa de datos) ===
+			// 1) === Inputs del mes y negocio ===
 			const yyyyMM = getYYYYMMFromInput();
 			if (!yyyyMM) { mostrarError('Selecciona un mes válido (YYYY-MM).'); return; }
 			const negocioSel = document.getElementById('negocioReporte')?.value ?? 'Todos';
 			const { desde: primerDia, hasta: ultimoDia } = monthRangeFromYYYYMM(yyyyMM);
 
-			// 2) ==========================
-			//        CAPA DE DATOS (TX)
-			// ==========================
-			const datosTx = await fetchTxPorRango(primerDia, ultimoDia, negocioSel);      // {Negocio1:[...], ...}
-			const deudasCierre = await fetchDeudasTx(negocioSel, { hastaISO: ultimoDia }); // Debe vigentes <= último día
+			// 2) ===== CAPA DE DATOS (TX) =====
+			const datosTx      = await fetchTxPorRango(primerDia, ultimoDia, negocioSel);       // {Negocio1:[...], ...}
+			const deudasCierre = await fetchDeudasTx(negocioSel, { hastaISO: ultimoDia });      // Debe vigentes <= último día
 
 			const negocios = (negocioSel === 'Todos') ? Object.keys(datosTx) : [negocioSel];
-			const resumen = { global: { ventas:0, gastos:0, balance:0 }, negocios: {} };
+			const resumen  = { global: { ventas: 0, gastos: 0, balance: 0 }, negocios: {} };
 
 			for (const neg of negocios) {
 				const arr = datosTx[neg] ?? [];
-				let ventasEf=0, ventasNq=0, gastosMes=0;
-				let ventasBrutasMes = 0;
+
+				let ventasEf = 0, ventasNq = 0, gastosMes = 0, ventasBrutasMes = 0;
 				const prodMap = new Map();
 
-				// 2.1 Ventas de caja (Pagado + abonos del mes), gastos del mes y top productos
-				arr.forEach(t=>{
+				// ✅ NUEVO: Mapa de gastos por categoría (descripción) por negocio
+				const gastoCatMap = new Map();   // categoria -> total
+
+				// 2.1 Ventas de caja / abonos / gastos / top productos
+				arr.forEach(t => {
 				const vb = Number(t?.totales?.ventasBrutas ?? 0);
 				ventasBrutasMes += vb;
 
+				// Ventas "Pagado" del mes, por método
 				if (t.estadoPago === 'Pagado' && vb > 0) {
 					if (t.metodoVenta === 'Efectivo') ventasEf += vb;
-					if (t.metodoVenta === 'Nequi')    ventasNq += vb;
+					else if (t.metodoVenta === 'Nequi') ventasNq += vb;
 				}
+
+				// Abonos dentro del mes
 				if (Array.isArray(t.pagos)) {
-					t.pagos.forEach(p=>{
+					t.pagos.forEach(p => {
 					if (p.fecha >= primerDia && p.fecha <= ultimoDia) {
 						const m = Number(p.monto ?? 0);
-						if (p.metodo === 'Efectivo') ventasEf += m;
-						if (p.metodo === 'Nequi')    ventasNq += m;
+						if ((p.metodo ?? '').toString().toLowerCase() === 'efectivo') ventasEf += m;
+						else if ((p.metodo ?? '').toString().toLowerCase() === 'nequi') ventasNq += m;
 					}
 					});
 				}
-				if (t.gasto && Number(t.gasto.monto ?? 0) > 0) {
-					gastosMes += Number(t.gasto.monto ?? 0);
+
+				// Gastos del mes + ✅ acumular por categoría (descripcion)
+				const montoG = Number(t?.gasto?.monto ?? 0);
+				if (t.gasto && montoG > 0) {
+					gastosMes += montoG;
+
+					const categoria = (t.gasto.descripcion || 'Sin descripción').toString().trim();
+					const prev = gastoCatMap.get(categoria) ?? 0;
+					gastoCatMap.set(categoria, prev + montoG);
 				}
 
+				// Top productos (cantidad + total)
 				if (Array.isArray(t.items)) {
-					t.items.forEach(it=>{
-					const prev = prodMap.get(it.producto) ?? {cantidad:0,total:0};
+					t.items.forEach(it => {
+					const prev = prodMap.get(it.producto) ?? { cantidad: 0, total: 0 };
 					prev.cantidad += Number(it.cantidad ?? 0);
 					prev.total    += Number(it.total ?? 0);
 					prodMap.set(it.producto, prev);
@@ -4232,43 +4244,50 @@
 				const ventasCaja = ventasEf + ventasNq;
 				const balance    = ventasCaja - gastosMes;
 
-				// 2.2 Crédito originado en el mes (ventas creadas en Debe dentro del mes)
-				const originadoMes = arr.reduce((s,t) =>
+				// 2.2 Crédito originado en el mes
+				const originadoMes = arr.reduce((s, t) =>
 				(t.estadoPago === 'Debe') ? s + Number(t?.totales?.ventasBrutas ?? 0) : s, 0);
 
-				// 2.3 Pendiente total acumulado al cierre + deudores (agrupados por cliente)
+				// 2.3 Pendiente acumulado al cierre + deudores
 				const deudasDeNegocio = deudasCierre[neg] ?? [];
-				const pendAcumCierre = deudasDeNegocio.reduce(
-				(s,t)=> s + Number(t?.totales?.pendiente ?? 0), 0
+				const pendAcumCierre  = deudasDeNegocio.reduce(
+				(s, t) => s + Number(t?.totales?.pendiente ?? 0), 0
 				);
 				const mapaClientes = new Map();
 				deudasDeNegocio.forEach(t => {
 				const pend = Number(t?.totales?.pendiente ?? 0);
 				if (pend > 0) {
 					const cliente = (t.cliente && String(t.cliente).trim()) ? t.cliente.trim() : 'Sin nombre';
-					const prev = mapaClientes.get(cliente) ?? { originado:0, abonado:0, pendiente:0, ventas:0 };
+					const prev = mapaClientes.get(cliente) ?? { originado: 0, abonado: 0, pendiente: 0, ventas: 0 };
 					prev.pendiente += pend;
-					prev.ventas += 1;
+					prev.ventas    += 1;
 					mapaClientes.set(cliente, prev);
 				}
 				});
 				const deudoresMes = [...mapaClientes.entries()]
 				.map(([cliente, k]) => ({ cliente, originado: 0, abonado: 0, pendiente: k.pendiente }))
-				.sort((a,b) => b.pendiente - a.pendiente);
+				.sort((a, b) => b.pendiente - a.pendiente);
 
-				// 2.4 Persistir KPIs del negocio
+				// ✅ Proyección del mapa de gastos a arreglo ordenado (top 10 opcional)
+				const gastosCat = [...gastoCatMap.entries()]
+				.map(([categoria, total]) => ({ categoria, total }))
+				.sort((a, b) => b.total - a.total);
+				// .slice(0, 10); // descomenta si quieres limitar el tamaño
+
+				// 2.4 Persistir KPIs del negocio (incluye gastosCat ✅)
 				resumen.negocios[neg] = {
 				ventas: ventasCaja,            // caja
 				ventasBrutas: ventasBrutasMes, // entregadas (Pagado+Debe)
 				gastos: gastosMes,
 				balance,
 				topProductos: [...prodMap.entries()]
-					.map(([producto,i]) => ({producto, cantidad:i.cantidad, total:i.total}))
-					.sort((a,b)=> b.total - a.total)
-					.slice(0,10),
+					.map(([producto, i]) => ({ producto, cantidad: i.cantidad, total: i.total }))
+					.sort((a, b) => b.total - a.total)
+					.slice(0, 10),
+				gastosCat, // ✅ <-- ahora existe
 				cxc: {
 					originadoMes,
-					abonosAplicadosMes: 0, // si luego quieres contarlos, te paso el cruce por id
+					abonosAplicadosMes: 0,
 					pendienteOriginadoMes: Math.max(0, originadoMes - 0),
 					pendienteTotalAcumulado: pendAcumCierre,
 					deudoresMes
@@ -4280,50 +4299,45 @@
 			}
 			resumen.global.balance = resumen.global.ventas - resumen.global.gastos;
 
-			// 3) ==========================
-			//          PDF
-			// ==========================
+			// 3) ===== PDF =====
 			const { jsPDF } = window.jspdf;
-			const doc = new jsPDF({ unit:'pt', format:'a4' });
+			const doc = new jsPDF({ unit: 'pt', format: 'a4' });
 			const margin = 36; // 0.5in
 			const pageWidth  = doc.internal.pageSize.getWidth();
 			const pageHeight = doc.internal.pageSize.getHeight();
 
 			function header() {
-				doc.setFillColor(102,126,234); // #667eea
-				doc.rect(0,0,pageWidth,54,'F');
-				doc.setFont('helvetica','bold');
-				doc.setTextColor('#ffffff');
-				doc.setFontSize(14);
+				doc.setFillColor(102, 126, 234); // #667eea
+				doc.rect(0, 0, pageWidth, 54, 'F');
+				doc.setFont('helvetica', 'bold'); doc.setTextColor('#ffffff'); doc.setFontSize(14);
 				doc.text('Sistema de Contabilidad — Informe mensual', margin, 28);
-				doc.setFont('helvetica','normal');
-				doc.setFontSize(11);
-				doc.text(`${nombreMes(yyyyMM)} · ${negocioSel==='Todos' ? 'Todos los negocios' : (nombresNegocios[negocioSel]||negocioSel)}`, margin, 46);
+				doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
+				doc.text(
+				`${nombreMes(yyyyMM)} · ${negocioSel === 'Todos' ? 'Todos los negocios' : (nombresNegocios[negocioSel] || negocioSel)}`,
+				margin, 46
+				);
 			}
-
 			function footer() {
 				const str = `Generado ${new Date().toLocaleString('es-CO')} · Pág. ${doc.internal.getNumberOfPages()}`;
-				doc.setFontSize(9);
-				doc.setTextColor('#777');
-				doc.text(str, pageWidth - margin, pageHeight - 14, { align:'right' });
+				doc.setFontSize(9); doc.setTextColor('#777');
+				doc.text(str, pageWidth - margin, pageHeight - 14, { align: 'right' });
 			}
 
 			header();
 
-			// Tabla Resumen por negocio (puedes añadir columna “Ventas brutas” si quieres)
+			// Resumen por negocio
 			const resumenRows = Object.entries(resumen.negocios).map(([neg, inf]) => ([
 				(nombresNegocios[neg] || neg),
 				COP(inf.ventas),               // caja
 				`-${COP(inf.gastos)}`,
 				COP(inf.balance)
 			]));
-
 			doc.autoTable({
 				startY: 70,
 				head: [['Negocio', 'Ventas (caja)', 'Gastos', 'Balance']],
 				body: resumenRows,
 				theme: 'striped',
-				headStyles: { fillColor: [102,126,234] },
+				headStyles: { fillColor: [102, 126, 234] },
 				styles: { fontSize: 9.5, cellPadding: 5 },
 				columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
 				didDrawPage: (data) => { if (data.pageNumber > 1) header(); },
@@ -4332,85 +4346,79 @@
 
 			// Totales globales
 			const afterResumenY = doc.lastAutoTable?.finalY || 90;
-			doc.setFontSize(11);
-			doc.setTextColor('#333');
-			doc.setFont('helvetica','bold');
+			doc.setFontSize(11); doc.setTextColor('#333'); doc.setFont('helvetica', 'bold');
 			doc.text('Totales del período:', margin, afterResumenY + 24);
-			doc.setFont('helvetica','normal');
-			doc.setTextColor('#000');
-			doc.text(`Ventas (caja): ${COP(resumen.global.ventas)} · Gastos: -${COP(resumen.global.gastos)} · Balance: ${COP(resumen.global.balance)}`, margin, afterResumenY + 42);
+			doc.setFont('helvetica', 'normal'); doc.setTextColor('#000');
+			doc.text(
+				`Ventas (caja): ${COP(resumen.global.ventas)} · Gastos: -${COP(resumen.global.gastos)} · Balance: ${COP(resumen.global.balance)}`,
+				margin, afterResumenY + 42
+			);
 			let yCursor = afterResumenY + 58;
 
-			// Secciones por negocio (Top productos, Gastos por categoría y CxC)
+			// Secciones por negocio (Top productos, Gastos por categoría, CxC)
 			for (const [neg, inf] of Object.entries(resumen.negocios)) {
 				if (yCursor > pageHeight - 180) { doc.addPage(); header(); yCursor = 70; }
 
-				doc.setFont('helvetica','bold');
-				doc.setFontSize(12);
-				doc.setTextColor('#333');
+				doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor('#333');
 				doc.text(`• ${nombresNegocios[neg] || neg}`, margin, yCursor);
 				yCursor += 10;
 
 				// KPIs cortos
-				doc.setFont('helvetica','normal');
-				doc.setFontSize(10);
+				doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
 				doc.text(`Ventas (caja): ${COP(inf.ventas)} · Gastos: -${COP(inf.gastos)} · Balance: ${COP(inf.balance)}`, margin, yCursor + 14);
 
 				// Top productos
-				const prodBody = (inf.topProductos.length ? inf.topProductos : [{producto:'(sin datos)',cantidad:0,total:0}])
+				const prodBody = (inf.topProductos.length ? inf.topProductos : [{ producto: '(sin datos)', cantidad: 0, total: 0 }])
 				.map(p => [p.producto, String(p.cantidad), COP(p.total)]);
 				doc.autoTable({
 				startY: yCursor + 28,
 				head: [['Top productos', 'Cant.', 'Total en Ventas']],
 				body: prodBody,
 				theme: 'grid',
-				headStyles: { fillColor: [102,126,234] },
+				headStyles: { fillColor: [102, 126, 234] },
 				styles: { fontSize: 9, cellPadding: 5 },
-				columnStyles: { 1: { halign: 'center', cellWidth: 60 }, 2: { halign: 'right',  cellWidth: 80 } },
+				columnStyles: { 1: { halign: 'center', cellWidth: 60 }, 2: { halign: 'right', cellWidth: 80 } },
 				margin: { left: margin, right: margin },
 				didDrawPage: (data) => { if (data.pageNumber > 1) header(); }
 				});
-
 				const afterProdY = doc.lastAutoTable?.finalY || (yCursor + 28);
 
-				// Gastos por categoría (si no la calculas en la capa de datos, puedes dejar el placeholder)
-				const gastosBody = (inf.gastosCat?.length ? inf.gastosCat : [{categoria:'(sin datos)', total:0}])
+				// Gastos por categoría (ahora con datos reales ✅)
+				const gastosBody = (inf.gastosCat?.length ? inf.gastosCat : [{ categoria: '(sin datos)', total: 0 }])
 				.map(g => [g.categoria, `-${COP(g.total)}`]);
 				doc.autoTable({
 				startY: afterProdY + 12,
 				head: [['Gastos por categoría', 'Total']],
 				body: gastosBody,
 				theme: 'grid',
-				headStyles: { fillColor: [220,53,69] }, // rojo
+				headStyles: { fillColor: [220, 53, 69] }, // rojo
 				styles: { fontSize: 9, cellPadding: 5 },
 				columnStyles: { 1: { halign: 'right', cellWidth: 100 } },
 				margin: { left: margin, right: margin },
 				didDrawPage: (data) => { if (data.pageNumber > 1) header(); }
 				});
 
-				// CxC (del período): KPIs + Tabla de deudores (ya vienen en inf.cxc)
+				// CxC (estado del período)
 				yCursor = doc.lastAutoTable?.finalY + 22;
-				const k = inf.cxc || { originadoMes:0, abonosAplicadosMes:0, pendienteOriginadoMes:0, pendienteTotalAcumulado:0, deudoresMes:[] };
+				const k = inf.cxc || { originadoMes: 0, abonosAplicadosMes: 0, pendienteOriginadoMes: 0, pendienteTotalAcumulado: 0, deudoresMes: [] };
 				if (yCursor > pageHeight - 180) { doc.addPage(); header(); yCursor = 70; }
 
-				doc.setFont('helvetica','bold');
-				doc.setFontSize(11);
+				doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
 				doc.text('Cuentas por Cobrar (estado del período)', margin, yCursor);
-				doc.setFont('helvetica','normal');
-				doc.setFontSize(10);
+				doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
 
 				const cxcRows = [
-				['Crédito originado en el mes',            COP(k.originadoMes)],
-				['Abonos aplicados a ese crédito (mes)',   `-${COP(k.abonosAplicadosMes)}`],
-				['Pendiente al cierre (de lo originado)',  COP(k.pendienteOriginadoMes)],
-				['Pendiente total acumulado al cierre',    COP(k.pendienteTotalAcumulado)]
+				['Crédito originado en el mes',           COP(k.originadoMes)],
+				['Abonos aplicados a ese crédito (mes)',  `-${COP(k.abonosAplicadosMes)}`],
+				['Pendiente al cierre (de lo originado)', COP(k.pendienteOriginadoMes)],
+				['Pendiente total acumulado al cierre',   COP(k.pendienteTotalAcumulado)]
 				];
 				doc.autoTable({
 				startY: yCursor + 10,
 				head: [['Concepto', 'Valor']],
 				body: cxcRows,
 				theme: 'grid',
-				headStyles: { fillColor: [52,58,64] }, // gris oscuro
+				headStyles: { fillColor: [52, 58, 64] },
 				styles: { fontSize: 9, cellPadding: 5 },
 				columnStyles: { 1: { halign: 'right', cellWidth: 180 } },
 				margin: { left: margin, right: margin },
@@ -4422,23 +4430,16 @@
 				if (k.deudoresMes && k.deudoresMes.length) {
 				if (afterCxcY > pageHeight - 160) { doc.addPage(); header(); }
 				const bodyDeud = k.deudoresMes.slice(0, 10).map(d => [
-					d.cliente,
-					COP(d.originado),
-					`-${COP(d.abonado)}`,
-					COP(d.pendiente)
+					d.cliente, COP(d.originado), `-${COP(d.abonado)}`, COP(d.pendiente)
 				]);
 				doc.autoTable({
 					startY: Math.max(afterCxcY + 12, 70),
 					head: [['Top deudores del mes', 'Originado', 'Abonado', 'Pendiente']],
 					body: bodyDeud,
 					theme: 'grid',
-					headStyles: { fillColor: [220,53,69] },
+					headStyles: { fillColor: [220, 53, 69] },
 					styles: { fontSize: 9, cellPadding: 5 },
-					columnStyles: {
-					1: { halign: 'right', cellWidth: 90 },
-					2: { halign: 'right', cellWidth: 90 },
-					3: { halign: 'right', cellWidth: 90 }
-					},
+					columnStyles: { 1: { halign: 'right', cellWidth: 90 }, 2: { halign: 'right', cellWidth: 90 }, 3: { halign: 'right', cellWidth: 90 } },
 					margin: { left: margin, right: margin },
 					didDrawPage: (data) => { if (data.pageNumber > 1) header(); }
 				});
@@ -4450,12 +4451,9 @@
 
 			// Footer en todas las páginas
 			const totalPages = doc.internal.getNumberOfPages();
-			for (let i=1; i<=totalPages; i++) {
-				doc.setPage(i);
-				footer();
-			}
+			for (let i = 1; i <= totalPages; i++) { doc.setPage(i); footer(); }
 
-			const fileName = `informe_mensual_${yyyyMM}${negocioSel==='Todos' ? '' : '_' + negocioSel}.pdf`;
+			const fileName = `informe_mensual_${yyyyMM}${negocioSel === 'Todos' ? '' : '_' + negocioSel}.pdf`;
 			doc.save(fileName);
 		}
 
